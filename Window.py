@@ -1,6 +1,8 @@
 import tkinter as tk
+from tkinter import messagebox, simpledialog
 from tkinter import *
 import csv
+from datetime import datetime
 
 #Rows and columns going from A-H(row) 8x12 grid (Can change the size w/ this)
 rows = 8
@@ -42,6 +44,7 @@ def open_data_entry(well_name):
             }
 
         popup.destroy()
+        save_plate_to_csv()
      
         if open_next:
             next_well = get_next_well(well_name)
