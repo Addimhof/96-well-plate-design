@@ -1,5 +1,4 @@
 import tkinter as tk
-from tkinter import simpledialog, messagebox
 from tkinter import *
 import csv
 
@@ -8,6 +7,8 @@ rows = 8
 columns = 12
 row_labels = [chr(i) for i in range(65, 65+rows)]
 well_data = {}
+buttons = {}
+button_states = {}
 
 #This is the window and its design
 window = Tk()
@@ -26,33 +27,44 @@ def open_data_entry(well_name):
 
     tk.Label(popup, text="Sample Name:").pack(anchor="w", padx=10)
     entry_sample = tk.Entry(popup,width=25)
+    entry_sample.insert(0, well_data.get(well_name,{}).get("sample",""))
     entry_sample.pack(padx=10, pady=10)
 
     tk.Label(popup, text="Concentration:").pack(anchor="w", padx=5)
     entry_concentration = tk.Entry(popup, width=25)
+    entry_concentration.insert(0, well_data.get(well_name,{}).get("concentration",""))
     entry_concentration.pack(padx=10,pady=10)
 
-    popup.bind("<Return>", lambda e: save_and_close())
+    def save_and_close(open_next=True):
+        well_data[well_name] = {
+            "sample": entry_sample.get(),
+            "concentration": entry_concentration.get()
+            }
 
+        popup.destroy()
+     
+        if open_next:
+            next_well = get_next_well(well_name)
+            if next_well:
+                open_data_entry(next_well)
 
-    def save_and_close():
-     well_data[well_name] = {
-        "sample": entry_sample.get(),
-        "concentration": entry_concentration.get()
-    }
+    popup.bind("<Return>", lambda e: save_and_close(True))
+    tk.Button(popup, text="Done", command=lambda: save_and_close(True)).pack(pady=5)
+    tk.Button(popup, text="Finish", command= lambda: save_and_close(False)).pack(pady=5)
 
-     popup.destroy()
-     save_plate_to_csv()
+def get_next_well(current_well):
+    all_wells = [f"{r}{c+1}" for r in row_labels for c in range(columns)]
+    try:
+        index = all_wells.index(current_well)
+        if index + 1 < len(all_wells):
+            return all_wells[index+1]
+        else:
+            return None
+    except ValueError:
+        return None
 
-    tk.Button(popup, text="Done", command=save_and_close).pack(pady=5)
-
-
-#This lets you know which well your hovering on it says it at the top
 def on_hover(well_name):
     window.title(f"Hovering over {well_name}")
-
-buttons = {}
-button_states = {}
 
 def button_pressed(row, col):
        if not button_states[(row, col)]:
@@ -69,7 +81,7 @@ for r in range(rows):
                            text=well_name,
                            width=6, height=2,
                            bg="lightgrey",
-                           command=lambda r=r, c=c,: button_pressed(r, c,)
+                           command=lambda r=r, c=c: button_pressed(r, c,)
         )
         button.grid(row=r, column=c, padx=2, pady=2)
         buttons[(r, c)] = button
@@ -91,7 +103,7 @@ def save_plate_to_csv():
             for c in range(columns):
                 well_name = f"{row_label}{c+1}"
                 data = well_data.get(well_name, {})
-                value = f"{data.get('sample','')}/{data.get('concentration','')}"
+                value = f"{data.get('sample','')}|{data.get('concentration', '')}"
                 row_values.append(value)
             writer.writerow([row_label] + row_values)
 
