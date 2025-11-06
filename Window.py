@@ -11,6 +11,7 @@ row_labels = [chr(i) for i in range(65, 65+rows)]
 well_data = {}
 buttons = {}
 button_states = {}
+round_number = 1
 
 #This is the window and its design
 window = Tk()
@@ -44,12 +45,11 @@ def open_data_entry(well_name):
             }
 
         popup.destroy()
-        save_plate_to_csv()
-     
-        if open_next:
-            next_well = get_next_well(well_name)
-            if next_well:
-                open_data_entry(next_well)
+        next_well = get_next_well(well_name)
+        if open_next and next_well:
+            open_data_entry(next_well)
+        elif not next_well:
+            save_plate_to_csv()
 
     popup.bind("<Return>", lambda e: save_and_close(True))
     tk.Button(popup, text="Done", command=lambda: save_and_close(True)).pack(pady=5)
@@ -96,7 +96,10 @@ for r in range(rows):
         ))
 
 def save_plate_to_csv():
-    with open("plate_data.csv", "w", newline="") as f:
+    global round_number
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"plate_data_round_{round_number}_{timestamp}.csv"
+    with open(filename, "w", newline="") as f:
         writer = csv.writer(f)
         header = [str(i+1) for i in range(columns)]
         writer.writerow([""]+header)
@@ -109,5 +112,13 @@ def save_plate_to_csv():
                 value = f"{data.get('sample','')}|{data.get('concentration', '')}"
                 row_values.append(value)
             writer.writerow([row_label] + row_values)
+
+def open_next_window():
+    global round_number, well_data
+    round_number += 1
+    well_data = {}
+    open_data_entry("A1")
+    window.after(900_000, open_next_window)
+window.after(900_000, open_next_window)
 
 window.mainloop()
