@@ -22,6 +22,10 @@ icon = PhotoImage(file='Ecoli.png')
 window.iconphoto(True, icon)
 window.config(background="white")
 
+timer_label = tk.Label(window, text="Timer: 0 seconds")
+timer_label.grid(row=rows, column=0, columnspan=12, pady=10)
+seconds_passed = 0
+
 def open_data_entry(well_name):
     popup = tk.Toplevel(window)
     popup.title(f"Enter data for {well_name}")
@@ -33,16 +37,22 @@ def open_data_entry(well_name):
     entry_sample.insert(0, well_data.get(well_name,{}).get("sample",""))
     entry_sample.pack(padx=10, pady=10)
 
-    tk.Label(popup, text="Concentration:").pack(anchor="w", padx=5)
-    entry_concentration = tk.Entry(popup, width=25)
-    entry_concentration.insert(0, well_data.get(well_name,{}).get("concentration",""))
-    entry_concentration.pack(padx=10,pady=10)
+    tk.Label(popup, text="OD:").pack(anchor="w", padx=5)
+    entry_OD = tk.Entry(popup, width=25)
+    entry_OD.insert(0, well_data.get(well_name,{}).get("OD",""))
+    entry_OD.pack(padx=10,pady=10)
+
+    tk.Label(popup, text="RFU:").pack(anchor="w", padx=5)
+    entry_RFU = tk.Entry(popup, width=25)
+    entry_RFU.insert(0, well_data.get(well_name,{}).get("RFU",""))
+    entry_RFU.pack(padx=10,pady=10)
 
     def save_and_close(open_next=True):
         well_data[well_name] = {
             "sample": entry_sample.get(),
-            "concentration": entry_concentration.get()
-            }
+            "od": entry_OD.get(),
+            "rfu": entry_RFU.get()
+        }
 
         popup.destroy()
         next_well = get_next_well(well_name)
@@ -109,7 +119,7 @@ def save_plate_to_csv():
             for c in range(columns):
                 well_name = f"{row_label}{c+1}"
                 data = well_data.get(well_name, {})
-                value = f"{data.get('sample','')}|{data.get('concentration', '')}"
+                value = f"{data.get('sample','')}|{data.get('OD', '')}|{data.get('RFU','')}"
                 row_values.append(value)
             writer.writerow([row_label] + row_values)
 
@@ -118,7 +128,18 @@ def open_next_window():
     round_number += 1
     well_data = {}
     open_data_entry("A1")
-    window.after(900_000, open_next_window)
-window.after(900_000, open_next_window)
+    window.after(60_000, open_next_window)
+window.after(60_000, open_next_window)
 
+def update_timer():
+    global seconds_passed
+    seconds_passed += 1
+    timer_label.config(text=f"Timer: {seconds_passed} seconds")
+    window.after(1000, update_timer)
+
+
+update_timer()
 window.mainloop()
+
+#Keith's Suggestions:
+#3D array, custom data class per well for measurements dynamically have in your UI? options for data entry 3d array retrive from old data if not updata saves what ever was before if update change. 
