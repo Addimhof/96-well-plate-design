@@ -12,6 +12,7 @@ well_data = {}
 buttons = {}
 button_states = {}
 round_number = 1
+sample_names = {}
 
 #This is the window and its design
 window = Tk()
@@ -34,8 +35,13 @@ def open_data_entry(well_name):
 
     tk.Label(popup, text="Sample Name:").pack(anchor="w", padx=10)
     entry_sample = tk.Entry(popup,width=25)
-    entry_sample.insert(0, well_data.get(well_name,{}).get("sample",""))
+    sample_value = well_data.get(well_name,{}).get("sample", "")
+
+    entry_sample.insert(0, sample_value)
+    if round_number > 1:
+        entry_sample.config(state="disabled")
     entry_sample.pack(padx=10, pady=10)
+
 
     tk.Label(popup, text="OD:").pack(anchor="w", padx=5)
     entry_OD = tk.Entry(popup, width=25)
@@ -48,11 +54,17 @@ def open_data_entry(well_name):
     entry_RFU.pack(padx=10,pady=10)
 
     def save_and_close(open_next=True):
+        sample = entry_sample.get()
+        od = entry_OD.get()
+        rfu = entry_RFU.get()
+
         well_data[well_name] = {
             "sample": entry_sample.get(),
             "od": entry_OD.get(),
             "rfu": entry_RFU.get()
         }
+        if round_number == 1:
+            sample_names[well_name] = sample
 
         popup.destroy()
         next_well = get_next_well(well_name)
@@ -119,14 +131,25 @@ def save_plate_to_csv():
             for c in range(columns):
                 well_name = f"{row_label}{c+1}"
                 data = well_data.get(well_name, {})
-                value = f"{data.get('sample','')}|{data.get('OD', '')}|{data.get('RFU','')}"
+                value = f"{data.get('sample','')}|{data.get('od', '')}|{data.get('rfu','')}"
                 row_values.append(value)
             writer.writerow([row_label] + row_values)
 
 def open_next_window():
     global round_number, well_data
     round_number += 1
-    well_data = {}
+
+    new_data = {}
+    for r in row_labels:
+        for c in range(columns):
+            well = f"{r}{c+1}"
+            new_data[well] = {
+        "sample": sample_names.get(well, ""),
+        "od": "",
+        "rfu": ""
+        }
+    well_data = new_data
+    
     open_data_entry("A1")
     window.after(60_000, open_next_window)
 window.after(60_000, open_next_window)
