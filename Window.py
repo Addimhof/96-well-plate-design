@@ -3,6 +3,7 @@ from tkinter import messagebox, simpledialog
 from tkinter import *
 import csv
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 #Rows and columns going from A-H(row) 8x12 grid (Can change the size w/ this)
 rows = 8
@@ -13,6 +14,7 @@ buttons = {}
 button_states = {}
 round_number = 1
 sample_names = {}
+well_history = {}
 
 #This is the window and its design
 window = Tk()
@@ -36,8 +38,8 @@ def open_data_entry(well_name):
     tk.Label(popup, text="Sample Name:").pack(anchor="w", padx=10)
     entry_sample = tk.Entry(popup,width=25)
     sample_value = well_data.get(well_name,{}).get("sample", "")
-
     entry_sample.insert(0, sample_value)
+    
     if round_number > 1:
         entry_sample.config(state="disabled")
     entry_sample.pack(padx=10, pady=10)
@@ -67,12 +69,14 @@ def open_data_entry(well_name):
             sample_names[well_name] = sample
 
         popup.destroy()
-        next_well = get_next_well(well_name)
-        if open_next and next_well:
-            open_data_entry(next_well)
-        elif not next_well:
+        if open_next:
+            next_well = get_next_well(well_name)
+            if next_well:
+                open_data_entry(next_well)
+            else:
+                save_plate_to_csv()
+        else:
             save_plate_to_csv()
-
     popup.bind("<Return>", lambda e: save_and_close(True))
     tk.Button(popup, text="Done", command=lambda: save_and_close(True)).pack(pady=5)
     tk.Button(popup, text="Finish", command= lambda: save_and_close(False)).pack(pady=5)
@@ -134,25 +138,39 @@ def save_plate_to_csv():
                 value = f"{data.get('sample','')}|{data.get('od', '')}|{data.get('rfu','')}"
                 row_values.append(value)
             writer.writerow([row_label] + row_values)
+save_button = tk.Button(window, text= "Save Curretn Data", command=save_plate_to_csv)
+save_button.grid(row=rows+2, column=0, columnspan=12, pady=5)
 
-def open_next_window():
+def start_round():
     global round_number, well_data
-    round_number += 1
-
-    new_data = {}
+    if round_number > 1:
+        save_plate_to_csv()
+        for w, data in well_data.items():
+            if w not in well_history:
+                well_history[w] = {"sample": data["sample"], "OD": [], "RFU": []}
+            try:
+                well_history[w]["OD"].append(float(data["od"]) if data['od'] else 0)
+            except ValueError:
+                well_history[w]["OD"].append(0)
+            try:       
+                well_history[w]["RFU"].append(float(data["rfu"]) if data['rfu'] else 0)
+            except ValueError:
+                well_history[w]["RFU"].append(0)
     for r in row_labels:
         for c in range(columns):
-            well = f"{r}{c+1}"
-            new_data[well] = {
-        "sample": sample_names.get(well, ""),
-        "od": "",
-        "rfu": ""
-        }
-    well_data = new_data
+            w = f"{r}{c+1}"
+            if w not in well_data:
+                well_data[w] = {"sample": "", "od": "", "rfu": ""}
     
-    open_data_entry("A1")
-    window.after(60_000, open_next_window)
-window.after(60_000, open_next_window)
+    for w in well_data:
+        well_data[w]["od"] = ""
+        well_data[w]["rfu"] = ""
+   
+    round_number += 1
+    messagebox.showinfo("New Round", f"Round {round_number} started. Enter new values.")
+
+round_button = tk.Button(window, text="Start New Round", command=start_round)
+round_button.grid(row=rows+2, column=0, columnspan=12, pady=5)
 
 def update_timer():
     global seconds_passed
@@ -160,9 +178,21 @@ def update_timer():
     timer_label.config(text=f"Timer: {seconds_passed} seconds")
     window.after(1000, update_timer)
 
+def plot_well_history():
+    for well, history in well_history.items():
+        rounds= list(range(1, len(history["OD"]) + 1))
+        plt.figure(figsize=(6,4))
+        plt.plot(rounds, history["OD"], marker= 'o', label="OD")
+        plt.plot(rounds, history["RFU"], marker='x', label='RFU')
+        plt.title(f"Well {well} ({history['sample']})")
+        plt.xlabel("Round")
+        plt.ylabel("Value")
+        plt.legend()
+        plt.show()
+plot_button = tk.Button(window, text="Plot Well History", command=plot_well_history)
+
+plot_button.grid(row=rows+1, column=0, columnspan=12, pady=10)
+
 
 update_timer()
 window.mainloop()
-
-#Keith's Suggestions:
-#3D array, custom data class per well for measurements dynamically have in your UI? options for data entry 3d array retrive from old data if not updata saves what ever was before if update change. 
