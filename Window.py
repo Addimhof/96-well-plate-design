@@ -39,34 +39,50 @@ def open_data_entry(well_name):
     entry_sample = tk.Entry(popup,width=25)
     sample_value = well_data.get(well_name,{}).get("sample", "")
     entry_sample.insert(0, sample_value)
-    
+
     if round_number > 1:
         entry_sample.config(state="disabled")
     entry_sample.pack(padx=10, pady=10)
 
 
     tk.Label(popup, text="OD:").pack(anchor="w", padx=5)
-    entry_OD = tk.Entry(popup, width=25)
-    entry_OD.insert(0, well_data.get(well_name,{}).get("OD",""))
-    entry_OD.pack(padx=10,pady=10)
+    entry_od = tk.Entry(popup, width=25)
+    entry_od.insert(0, well_data.get(well_name,{}).get("od",""))
+    entry_od.pack(padx=10,pady=10)
 
     tk.Label(popup, text="RFU:").pack(anchor="w", padx=5)
-    entry_RFU = tk.Entry(popup, width=25)
-    entry_RFU.insert(0, well_data.get(well_name,{}).get("RFU",""))
-    entry_RFU.pack(padx=10,pady=10)
+    entry_rfu = tk.Entry(popup, width=25)
+    entry_rfu.insert(0, well_data.get(well_name,{}).get("rfu",""))
+    entry_rfu.pack(padx=10,pady=10)
 
     def save_and_close(open_next=True):
         sample = entry_sample.get()
-        od = entry_OD.get()
-        rfu = entry_RFU.get()
+        od = entry_od.get()
+        rfu = entry_rfu.get()
 
         well_data[well_name] = {
             "sample": entry_sample.get(),
-            "od": entry_OD.get(),
-            "rfu": entry_RFU.get()
+            "od": entry_od.get(),
+            "rfu": entry_rfu.get()
         }
+        if well_name not in well_history:
+            well_history[well_name] = {
+                "sample": sample, 
+                "od": [], 
+                "rfu": []
+            }
+        try:
+            well_history[well_name]["od"].append(
+                float(od) if od else 0)
+        except:
+            well_history[well_name]["od"].append(0)
+        try:
+            well_history[well_name]["rfu"].append(float(rfu) if rfu else 0)
+        except:
+            well_history[well_name]["rfu"].append(0)
+
         if round_number == 1:
-            sample_names[well_name] = sample
+            sample_names[well_name] = sample    
 
         popup.destroy()
         if open_next:
@@ -122,9 +138,24 @@ for r in range(rows):
         ))
 
 def save_plate_to_csv():
-    global round_number
+    global round_number, well_history
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"plate_data_round_{round_number}_{timestamp}.csv"
+    for well, data in well_data.items():
+        if well not in well_history:
+            well_history[well] = {"sample": data["sample"], "od": [], "rfu": []}
+    
+        try:
+            od_value = float(data["od"]) if data ["od"] else 0
+        except ValueError:
+            od_value = 0
+        well_history[well]["od"].append(od_value)
+        try:
+            rfu_value = float(data["rfu"]) if data ["rfu"] else 0
+        except ValueError:
+            rfu_value = 0
+        well_history[well]["rfu"].append(rfu_value)
+   
     with open(filename, "w", newline="") as f:
         writer = csv.writer(f)
         header = [str(i+1) for i in range(columns)]
@@ -147,15 +178,15 @@ def start_round():
         save_plate_to_csv()
         for w, data in well_data.items():
             if w not in well_history:
-                well_history[w] = {"sample": data["sample"], "OD": [], "RFU": []}
+                well_history[w] = {"sample": data["sample"], "od": [], "rfu": []}
             try:
-                well_history[w]["OD"].append(float(data["od"]) if data['od'] else 0)
+                well_history[w]["od"].append(float(data["od"]) if data['od'] else 0)
             except ValueError:
-                well_history[w]["OD"].append(0)
+                well_history[w]["od"].append(0)
             try:       
-                well_history[w]["RFU"].append(float(data["rfu"]) if data['rfu'] else 0)
+                well_history[w]["rfu"].append(float(data["rfu"]) if data['rfu'] else 0)
             except ValueError:
-                well_history[w]["RFU"].append(0)
+                well_history[w]["rfu"].append(0)
     for r in row_labels:
         for c in range(columns):
             w = f"{r}{c+1}"
@@ -174,16 +205,22 @@ round_button.grid(row=rows+2, column=0, columnspan=12, pady=5)
 
 def update_timer():
     global seconds_passed
-    seconds_passed += 1
-    timer_label.config(text=f"Timer: {seconds_passed} seconds")
-    window.after(1000, update_timer)
+    try:
+        seconds_passed += 1
+        timer_label.config(text=f"Timer: {seconds_passed} seconds")
+        window.after(1000, update_timer)
+    except:
+        pass
 
 def plot_well_history():
     for well, history in well_history.items():
-        rounds= list(range(1, len(history["OD"]) + 1))
+        if not(any(v != 0 for v in history["od"]) or any(v !=0 for v in history["rfu"])):
+            continue
+        rounds= list(range(1, len(history["od"]) + 1))
+
         plt.figure(figsize=(6,4))
-        plt.plot(rounds, history["OD"], marker= 'o', label="OD")
-        plt.plot(rounds, history["RFU"], marker='x', label='RFU')
+        plt.plot(rounds, history["od"], marker= 'o', label="od")
+        plt.plot(rounds, history["rfu"], marker='x', label='rfu')
         plt.title(f"Well {well} ({history['sample']})")
         plt.xlabel("Round")
         plt.ylabel("Value")
