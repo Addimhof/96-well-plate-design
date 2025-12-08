@@ -226,10 +226,86 @@ def plot_well_history():
         plt.ylabel("Value")
         plt.legend()
         plt.show()
-plot_button = tk.Button(window, text="Plot Well History", command=plot_well_history)
 
-plot_button.grid(row=rows+1, column=0, columnspan=12, pady=10)
+def trim_empties(values):
+    while values and (values[-1] =="" or values[-1] is None):
+        values.pop()
+    return values
 
+def select_and_plot_wells():
+    popup = tk.Toplevel(window)
+    popup.title("Select Wells to Plot")
+
+    canvas = tk.Canvas(popup, height=300)
+    scrollbar = tk.Scrollbar(popup, orient="vertical", command=canvas.yview)
+    scrollbar = tk.Scrollbar(popup, orient="horizontal", command=canvas.xview)
+   
+    frame = tk.Frame(canvas)
+    frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+   
+    canvas.create_window((0,0), window=frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+   
+    canvas.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+    
+    popup.grid_rowconfigure(0, weight=1)
+    popup.grid_columnconfigure(0, weight=1)
+    tk.Label(frame, text="Select wells to plot").grid(row=0, column=0, columnspan=columns, pady=5)
+
+    well_vars = {}
+
+    row_index = 1
+    for r_i, r in enumerate(row_labels):
+        for c in range(1, columns + 1):
+            well = f"{r}{c}"
+            history = well_history.get(well, None)
+
+            if history and (any(v !="" for v in history["od"]) or
+                            any(v != "" for v in history ["rfu"])):
+                var = tk.BooleanVar()
+                well_vars[well] = var
+                cb = tk.Checkbutton(frame, text=f"{well} ({history['sample']})", variable=var)
+                cb.grid(row=row_index + r_i, column=c-1, padx=3, pady=3)
+
+    def plot_selected():
+        plt.figure(figsize=(8,5))
+        ax1 = plt.gca()
+        ax2 = ax1.twinx()
+        colors = plt.cm.tab10.colors
+        color_index = 0
+
+        for well, var in well_vars.items():
+            if var.get():
+                history = well_history[well]
+                rounds = list(range(1, len(history["od"]) + 1))
+                
+                od_values = [float(v) if v != "" else None for v in history["od"]]
+                rfu_values = [float(v) if v != "" else None for v in history["rfu"]]
+               
+                od_values = trim_empties(od_values)
+                rfu_values = trim_empties(rfu_values)
+               
+                color = colors[color_index % len(colors)]
+                color_index += 1
+
+                ax1.plot(rounds, od_values, color=color, marker = 'o', linestyle='-', label=f"{history['sample']} OD")
+                ax2.plot(rounds, rfu_values, color=color, marker = 'x', linestyle='--', label=f"{history['sample']} RFU")
+        ax1.set_xlabel("Round")
+        ax1.set_ylabel("OD")
+        ax2.set_ylabel("RFU")
+        
+        lns = ax1.get_lines() + ax2.get_lines()
+        labels = [l.get_label() for l in lns]
+        ax1.legend(lns, labels, loc='upper left', bbox_to_anchor=(1,1))
+       
+        plt.title("Selected Wells OD & RFU")
+        plt.tight_layout()
+        plt.show()
+        popup.destroy()
+    tk.Button(frame, text="Plot Selected", command=plot_selected).grid(row=rows+2, column=0, columnspan=columns, pady=10)
+plot_selected_button = tk.Button(window, text="Plot Selected Wells", command=select_and_plot_wells)
+plot_selected_button.grid(row=rows+3, column=0, columnspan=12, pady=10)
 
 update_timer()
 window.mainloop()
