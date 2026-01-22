@@ -4,9 +4,6 @@ from tkinter import *
 import csv
 from datetime import datetime
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
-import numpy as np
-
 
 #Rows and columns going from A-H(row) 8x12 grid (Can change the size w/ this)
 rows = 8
@@ -31,9 +28,6 @@ window.config(background="white")
 timer_label = tk.Label(window, text="Timer: 0 seconds")
 timer_label.grid(row=rows, column=0, columnspan=12, pady=10)
 seconds_passed = 0
-
-def logistic(t, OD_max, k, t0)
-    
 
 def open_data_entry(well_name):
     popup = tk.Toplevel(window)
@@ -77,15 +71,6 @@ def open_data_entry(well_name):
                 "od": [], 
                 "rfu": []
             }
-        try:
-            well_history[well_name]["od"].append(
-                float(od) if od else 0)
-        except:
-            well_history[well_name]["od"].append(0)
-        try:
-            well_history[well_name]["rfu"].append(float(rfu) if rfu else 0)
-        except:
-            well_history[well_name]["rfu"].append(0)
 
         if round_number == 1:
             sample_names[well_name] = sample    
@@ -180,24 +165,7 @@ save_button.grid(row=rows+2, column=0, columnspan=12, pady=5)
 
 def start_round():
     global round_number, well_data
-    if round_number > 1:
-        save_plate_to_csv()
-        for w, data in well_data.items():
-            if w not in well_history:
-                well_history[w] = {"sample": data["sample"], "od": [], "rfu": []}
-            try:
-                well_history[w]["od"].append(float(data["od"]) if data['od'] else 0)
-            except ValueError:
-                well_history[w]["od"].append(0)
-            try:       
-                well_history[w]["rfu"].append(float(data["rfu"]) if data['rfu'] else 0)
-            except ValueError:
-                well_history[w]["rfu"].append(0)
-    for r in row_labels:
-        for c in range(columns):
-            w = f"{r}{c+1}"
-            if w not in well_data:
-                well_data[w] = {"sample": "", "od": "", "rfu": ""}
+    save_plate_to_csv()
     
     for w in well_data:
         well_data[w]["od"] = ""
@@ -243,17 +211,17 @@ def select_and_plot_wells():
     popup.title("Select Wells to Plot")
 
     canvas = tk.Canvas(popup, height=300)
-    scrollbar = tk.Scrollbar(popup, orient="vertical", command=canvas.yview)
-    scrollbar = tk.Scrollbar(popup, orient="horizontal", command=canvas.xview)
+    v_scrollbar = tk.Scrollbar(popup, orient="vertical", command=canvas.yview)
+    h_scrollbar = tk.Scrollbar(popup, orient="horizontal", command=canvas.xview)
    
     frame = tk.Frame(canvas)
     frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
    
     canvas.create_window((0,0), window=frame, anchor="nw")
-    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.configure(yscrollcommand=v_scrollbar.set)
    
     canvas.grid(row=0, column=0, sticky="nsew")
-    scrollbar.grid(row=0, column=1, sticky="ns")
+    v_scrollbar.grid(row=0, column=1, sticky="ns")
     
     popup.grid_rowconfigure(0, weight=1)
     popup.grid_columnconfigure(0, weight=1)
@@ -295,24 +263,11 @@ def select_and_plot_wells():
                 color = colors[color_index % len(colors)]
                 color_index += 1
 
-            if len(rounds) > 1:
-                xnew = np.linspace(min(rounds), max(rounds), 300)
-                pchip_od = PchipInterpolator(rounds, od_values)
-                od_smooth = pchip_od(xnew)
-                ax1.plot(xnew, od_smooth, color=color, linestyle='-', label=f"{history['sample']} OD" )
-            else:
                 ax1.plot(rounds, od_values, color=color, marker = 'o', linestyle='-', label=f"{history['sample']} OD")
-            if len(rounds) > 1:
-                pchip_rfu = PchipInterpolator(rounds, rfu_values)
-                rfu_smooth = pchip_rfu(xnew)  
-                ax2.plot(xnew, rfu_smooth, color=color, linestyle='--', label=f"{history['sample']} RFU")
-            else:
                 ax2.plot(rounds, rfu_values, color=color, marker = 'x', linestyle='--', label=f"{history['sample']} RFU")
         ax1.set_xlabel("Round")
         ax1.set_ylabel("OD")
         ax2.set_ylabel("RFU")
-        ax1.set_yscale("log")
-        ax2.set_yscale("log")
         
         lns = ax1.get_lines() + ax2.get_lines()
         labels = [l.get_label() for l in lns]
