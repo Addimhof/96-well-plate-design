@@ -218,13 +218,16 @@ def select_and_plot_wells():
     frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
    
     canvas.create_window((0,0), window=frame, anchor="nw")
-    canvas.configure(yscrollcommand=v_scrollbar.set)
+    canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
    
     canvas.grid(row=0, column=0, sticky="nsew")
     v_scrollbar.grid(row=0, column=1, sticky="ns")
+    h_scrollbar.grid(row=1, column=0, sticky="ew")
+
     
     popup.grid_rowconfigure(0, weight=1)
     popup.grid_columnconfigure(0, weight=1)
+
     tk.Label(frame, text="Select wells to plot").grid(row=0, column=0, columnspan=columns, pady=5)
 
     well_vars = {}
