@@ -2,8 +2,49 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 from tkinter import *
 import csv
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime
 import matplotlib.pyplot as plt
+import numpy as np
+import cluster_plate as cp
+import os
+
+
+DEV_MODE = True
+CSV_FOLDER = "plate_test_rounds_native"
+def load_all_rounds_from_folder(folder):
+    global well_data, well_history, round_number
+
+    well_data = {}
+    well_history = {}
+    round_number = 0
+
+    csv_files = sorted([f for f in os.listdir(folder) if f.endswith(".csv")])
+    for csv_file in csv_files:
+        round_number += 1
+        path = os.path.join(folder, csv_file)
+
+        with open(path, newline="") as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            for row in reader:
+                row_label = row[0]
+                for i, cell in enumerate(row[1:]):
+                    well = f"{row_label}{i+1}"
+                    sample, od, rfu = cell.split("|")
+                    od_val = float(od) if od else 0
+                    rfu_val = float(rfu) if rfu else 0
+
+                    if well not in well_history:
+                        well_history[well] = {"sample": sample, "od": [], "rfu": []}
+
+                    well_history[well]["od"].append(od_val)
+                    well_history[well]["rfu"].append(rfu_val)
+
+                    # For current round, fill well_data with last values
+                    well_data[well] = {"sample": sample, "od": od_val, "rfu": rfu_val}
+
+    print(f"✅ Loaded {round_number} rounds from folder '{folder}'")
 
 #Rows and columns going from A-H(row) 8x12 grid (Can change the size w/ this)
 rows = 8
@@ -15,6 +56,10 @@ button_states = {}
 round_number = 1
 sample_names = {}
 well_history = {}
+DEV_MODE = True
+
+if DEV_MODE:
+    load_all_rounds_from_folder(CSV_FOLDER)
 
 #This is the window and its design
 window = Tk()
@@ -179,12 +224,11 @@ round_button.grid(row=rows+2, column=0, columnspan=12, pady=5)
 
 def update_timer():
     global seconds_passed
-    try:
-        seconds_passed += 1
-        timer_label.config(text=f"Timer: {seconds_passed} seconds")
-        window.after(1000, update_timer)
-    except:
-        pass
+    if not window.winfo_exists():  # window is destroyed
+        return
+    seconds_passed += 1
+    timer_label.config(text=f"Timer: {seconds_passed} seconds")
+    window.after(1000, update_timer)
 
 def plot_well_history():
     for well, history in well_history.items():
@@ -207,82 +251,227 @@ def trim_empties(values):
     return values
 
 def select_and_plot_wells():
-    popup = tk.Toplevel(window)
-    popup.title("Select Wells to Plot")
+    import cluster_plate as cp  # Make sure cluster_plate.py is in the same folder
 
-    canvas = tk.Canvas(popup, height=300)
-    v_scrollbar = tk.Scrollbar(popup, orient="vertical", command=canvas.yview)
-    h_scrollbar = tk.Scrollbar(popup, orient="horizontal", command=canvas.xview)
-   
+    # --- Step 1: Well selection popup ---
+    well_popup = tk.Toplevel(window)
+    well_popup.title("Select Wells to Plot")
+
+    canvas = tk.Canvas(well_popup, height=300)
+    v_scrollbar = tk.Scrollbar(well_popup, orient="vertical", command=canvas.yview)
     frame = tk.Frame(canvas)
+
     frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-   
     canvas.create_window((0,0), window=frame, anchor="nw")
-    canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-   
+    canvas.configure(yscrollcommand=v_scrollbar.set)
+
     canvas.grid(row=0, column=0, sticky="nsew")
     v_scrollbar.grid(row=0, column=1, sticky="ns")
-    h_scrollbar.grid(row=1, column=0, sticky="ew")
-
-    
-    popup.grid_rowconfigure(0, weight=1)
-    popup.grid_columnconfigure(0, weight=1)
+    well_popup.grid_rowconfigure(0, weight=1)
+    well_popup.grid_columnconfigure(0, weight=1)
 
     tk.Label(frame, text="Select wells to plot").grid(row=0, column=0, columnspan=columns, pady=5)
 
+    # --- Select All checkbox ---
     well_vars = {}
+    select_all_var = tk.BooleanVar(value=False)
+    def toggle_select_all():
+        for var in well_vars.values():
+            var.set(select_all_var.get())
+    tk.Checkbutton(frame, text="Select All Wells", variable=select_all_var, command=toggle_select_all).grid(row=1, column=0, columnspan=columns, pady=5)
 
-    row_index = 1
+    # --- Individual wells ---
+    row_index = 2
     for r_i, r in enumerate(row_labels):
         for c in range(1, columns + 1):
             well = f"{r}{c}"
             history = well_history.get(well, None)
-
-            if history and (any(v !="" for v in history["od"]) or
-                            any(v != "" for v in history ["rfu"])):
+            if history and (any(v != 0 for v in history["od"]) or any(v != 0 for v in history["rfu"])):
                 var = tk.BooleanVar()
                 well_vars[well] = var
                 cb = tk.Checkbutton(frame, text=f"{well} ({history['sample']})", variable=var)
                 cb.grid(row=row_index + r_i, column=c-1, padx=3, pady=3)
 
-    def plot_selected():
+    def go_to_graph_type():
+        well_popup.destroy()
+        selected_wells = [w for w, var in well_vars.items() if var.get()]
+        if not selected_wells:
+            messagebox.showwarning("No wells selected", "Please select at least one well.")
+            return
+        graph_type_popup(selected_wells)
+
+    tk.Button(frame, text="Next", command=go_to_graph_type).grid(row=rows+3, column=0, columnspan=columns, pady=10)
+
+    # --- Step 2: Graph type selection popup ---
+    def graph_type_popup(selected_wells):
+        popup = tk.Toplevel(window)
+        popup.title("Select Graph Type")
+
+        tk.Label(popup, text="Select graph type:").pack(pady=5)
+        graph_type_var = tk.StringVar(value="all")
+        tk.Radiobutton(popup, text="Standard Graph", variable=graph_type_var, value="all").pack(anchor="w", padx=10)
+        tk.Radiobutton(popup, text="Clustered Graph", variable=graph_type_var, value="clustered").pack(anchor="w", padx=10)
+
+        def go_next():
+            popup.destroy()
+            if graph_type_var.get() == "all":
+                plot_standard(selected_wells)
+            else:
+                cluster_options_popup(selected_wells)
+
+        tk.Button(popup, text="Next", command=go_next).pack(pady=10)
+
+    # --- Step 3: Cluster options popup ---
+    def cluster_options_popup(selected_wells):
+        popup = tk.Toplevel(window)
+        popup.title("Cluster Options")
+
+        # --- Measurements ---
+        tk.Label(popup, text="Select measurement(s) to cluster:").pack(pady=5)
+        od_var = tk.BooleanVar(value=True)
+        rfu_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(popup, text="OD", variable=od_var).pack(anchor="w", padx=10)
+        tk.Checkbutton(popup, text="RFU", variable=rfu_var).pack(anchor="w", padx=10)
+
+        # --- Features ---
+        tk.Label(popup, text="Select features for clustering:").pack(pady=5)
+        feature_vars = {}
+        for feat in ["total", "peak", "ending"]:
+            var = tk.BooleanVar(value=True)
+            feature_vars[feat] = var
+            tk.Checkbutton(popup, text=feat.capitalize(), variable=var).pack(anchor="w", padx=10)
+
+        # --- Clustering mode ---
+        tk.Label(popup, text="Select clustering mode:").pack(pady=5)
+        cluster_mode_var = tk.StringVar(value="auto")
+        tk.Radiobutton(popup, text="Automatic Clustering", variable=cluster_mode_var, value="auto").pack(anchor="w", padx=10)
+        tk.Radiobutton(popup, text="Specify Number of Clusters", variable=cluster_mode_var, value="manual").pack(anchor="w", padx=10)
+
+        num_clusters_entry = tk.Entry(popup, width=5)
+        num_clusters_entry.pack(anchor="w", padx=20)
+        num_clusters_entry.insert(0, "")
+
+        def plot_clusters():
+            signals_selected = {"OD": od_var.get(), "RFU": rfu_var.get()}
+            if not any(signals_selected.values()):
+                messagebox.showwarning("No measurement selected", "Select at least OD or RFU.")
+                return
+
+            features_selected = [f for f, var in feature_vars.items() if var.get()]
+            if not features_selected:
+                messagebox.showwarning("No features selected", "Select at least one feature for clustering.")
+                return
+
+            n_clusters = None
+            if cluster_mode_var.get() == "manual":
+                try:
+                    n_clusters = int(num_clusters_entry.get())
+                    if n_clusters < 1:
+                        raise ValueError
+                except ValueError:
+                    messagebox.showwarning("Invalid input", "Enter a valid number of clusters.")
+                    return
+
+            popup.destroy()
+            # Call your existing cluster_plate plotting function
+            plot_clusters_gui(
+                selected_wells=selected_wells,
+                features_selected=features_selected,
+                signals_selected=signals_selected,
+                clustering_mode="kmeans" if n_clusters else "auto",
+                n_clusters=n_clusters if n_clusters else 4
+            )
+
+        tk.Button(popup, text="Plot", command=plot_clusters).pack(pady=10)
+
+    # --- Step 4: Standard plotting function ---
+    def plot_standard(selected_wells):
         plt.figure(figsize=(8,5))
         ax1 = plt.gca()
         ax2 = ax1.twinx()
         colors = plt.cm.tab10.colors
         color_index = 0
 
-        for well, var in well_vars.items():
-            if var.get():
-                history = well_history[well]
-                rounds = list(range(1, len(history["od"]) + 1))
-                
-                od_values = [float(v) if v != "" else None for v in history["od"]]
-                rfu_values = [float(v) if v != "" else None for v in history["rfu"]]
-               
-                od_values = trim_empties(od_values)
-                rfu_values = trim_empties(rfu_values)
-               
-                color = colors[color_index % len(colors)]
-                color_index += 1
+        for well in selected_wells:
+            history = well_history[well]
+            rounds = list(range(1, len(history["od"]) + 1))
+            # OD
+            ax1.plot(rounds, history["od"], marker='o', linestyle='-', label=f"{history['sample']} OD", color=colors[color_index % len(colors)])
+            # RFU
+            ax2.plot(rounds, history["rfu"], marker='x', linestyle='--', label=f"{history['sample']} RFU", color=colors[color_index % len(colors)])
+            color_index += 1
 
-                ax1.plot(rounds, od_values, color=color, marker = 'o', linestyle='-', label=f"{history['sample']} OD")
-                ax2.plot(rounds, rfu_values, color=color, marker = 'x', linestyle='--', label=f"{history['sample']} RFU")
         ax1.set_xlabel("Round")
         ax1.set_ylabel("OD")
         ax2.set_ylabel("RFU")
-        
         lns = ax1.get_lines() + ax2.get_lines()
         labels = [l.get_label() for l in lns]
         ax1.legend(lns, labels, loc='upper left', bbox_to_anchor=(1,1))
-       
         plt.title("Selected Wells OD & RFU")
         plt.tight_layout()
         plt.show()
-        popup.destroy()
-    tk.Button(frame, text="Plot Selected", command=plot_selected).grid(row=rows+2, column=0, columnspan=columns, pady=10)
-plot_selected_button = tk.Button(window, text="Plot Selected Wells", command=select_and_plot_wells)
+
+plot_selected_button = tk.Button(
+    window,
+    text="Plot Selected Wells",
+    command=select_and_plot_wells)
 plot_selected_button.grid(row=rows+3, column=0, columnspan=12, pady=10)
+
+def plot_clusters_gui(selected_wells, features_selected, signals_selected,
+                      clustering_mode="kmeans", n_clusters=4, dbscan_eps=0.5):
+    import cluster_plate as cp  # ensure you’re using the correct module
+
+    # Make sure all OD/RFU in well_history are lists
+    for w in selected_wells:
+        if isinstance(well_history[w]["od"], (float, str)):
+            well_history[w]["od"] = [float(well_history[w]["od"])]
+        if isinstance(well_history[w]["rfu"], (float, str)):
+            well_history[w]["rfu"] = [float(well_history[w]["rfu"])]
+
+    popup_plot = tk.Toplevel()
+    popup_plot.title("Clustered Wells Plot")
+
+    fig, ax_od = plt.subplots(figsize=(9,6))
+    ax_rfu = ax_od.twinx()
+    colors = plt.cm.tab10.colors
+
+    # determine max rounds across selected wells for x-axis
+    max_rounds = max(len(well_history[w]["od"]) for w in selected_wells)
+    rounds = list(range(1, max_rounds + 1))
+
+    # ---- OD clustering ----
+    if signals_selected.get("OD", False):
+        X_od, labels_od = cp.build_feature_matrix(well_history, "od", features_selected, selected_wells)
+        od_cluster_ids = cp.cluster_signal(X_od, clustering_mode, n_clusters, dbscan_eps)
+        od_clusters = cp.build_cluster_map(labels_od, od_cluster_ids)
+        for cid, wells in od_clusters.items():
+            mean_od = np.array([well_history[w]["od"] for w in wells], dtype=object)
+            mean_od = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_od], axis=0)
+            ax_od.plot(rounds, mean_od, color=colors[cid % len(colors)],
+                       linestyle="-", linewidth=2, label=f"Cluster {cid} OD (n={len(wells)})")
+
+    # ---- RFU clustering ----
+    if signals_selected.get("RFU", False):
+        X_rfu, labels_rfu = cp.build_feature_matrix(well_history, "rfu", features_selected, selected_wells)
+        rfu_cluster_ids = cp.cluster_signal(X_rfu, clustering_mode, n_clusters, dbscan_eps)
+        rfu_clusters = cp.build_cluster_map(labels_rfu, rfu_cluster_ids)
+        for cid, wells in rfu_clusters.items():
+            mean_rfu = np.array([well_history[w]["rfu"] for w in wells], dtype=object)
+            mean_rfu = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_rfu], axis=0)
+            ax_rfu.plot(rounds, mean_rfu, color=colors[cid % len(colors)],
+                        linestyle="--", linewidth=2, label=f"Cluster {cid} RFU (n={len(wells)})")
+
+    ax_od.set_xlabel("Round")
+    ax_od.set_ylabel("OD")
+    ax_rfu.set_ylabel("RFU")
+    lines = ax_od.get_lines() + ax_rfu.get_lines()
+    labels = [l.get_label() for l in lines]
+    ax_od.legend(lines, labels, loc="best")
+    ax_od.set_title("Clustered Mean OD and RFU Curves")
+
+    canvas = FigureCanvasTkAgg(fig, master=popup_plot)
+    canvas.draw()
+    canvas.get_tk_widget().pack(fill="both", expand=True)
 
 update_timer()
 window.mainloop()
