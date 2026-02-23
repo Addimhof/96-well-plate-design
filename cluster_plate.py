@@ -15,14 +15,40 @@ def compute_features(values, features):
         out.append(values[-1])
     return out
 
-def build_feature_matrix(well_data, signal_key, features, selected_wells=None):
+def build_feature_matrix(well_data, signal_key, features,
+                         selected_wells=None,
+                         include_promoter=False,
+                         include_ahl=False):
+
     X, labels = [], []
     wells_to_use = selected_wells if selected_wells else well_data.keys()
+
+    # --- Encode categorical values ---
+    promoters = sorted({well_data[w]["promoter"] for w in wells_to_use})
+    promoter_map = {p: i for i, p in enumerate(promoters)}
+
+    ahl_values = sorted({well_data[w]["ahl"] for w in wells_to_use})
+    ahl_map = {a: i for i, a in enumerate(ahl_values)}
+
     for well in wells_to_use:
-        vec = compute_features(well_data[well][signal_key.lower()], features)
+        vec = []
+
+        # Signal features
+        if signal_key:
+            vec.extend(compute_features(well_data[well][signal_key.lower()], features))
+
+        # Promoter encoding
+        if include_promoter:
+            vec.append(promoter_map.get(well_data[well]["promoter"], 0))
+
+        # AHL encoding
+        if include_ahl:
+            vec.append(ahl_map.get(well_data[well]["ahl"], 0))
+
         if vec:
             X.append(vec)
             labels.append(well)
+
     return np.array(X), labels
 
 def cluster_signal(X, clustering_mode="kmeans", n_clusters=4, dbscan_eps=0.5):
