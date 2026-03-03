@@ -97,13 +97,9 @@ DEV_MODE = True
 CSV_FOLDER = "plate_test_rounds_native"
 
 When enabled:
-
 Loads all .csv files from the folder
-
 Reconstructs well history
-
 Continues round numbering
-
 Change Plate Size
 rows = 8
 columns = 12
@@ -113,7 +109,6 @@ The UI, CSV export, and selection interface update automatically.
 📦 Requirements
 
 Python 3.8+
-
 Install dependencies:
 
 pip install matplotlib numpy
@@ -135,25 +130,17 @@ The timer begins automatically on launch.
 🎯 Example Use Cases
 
 Promoter strength characterization
-
 AHL titration curves
-
 Multi-round optimization experiments
-
 Fluorescence response profiling
-
 Signal-shape based phenotype clustering
 
 🛠 Future Improvements
 
 Heatmap plate visualization
-
 RFU/OD normalization toggle
-
 Export plots to PNG/PDF
-
 Direct plate reader file import
-
 Save/load complete experiment session
 
 📜 License
@@ -163,15 +150,8 @@ Add your preferred license (MIT recommended for academic tools).
 👨‍🔬 Intended Audience
 
 Researchers who need:
-
-Structured well metadata tracking
-
-Multi-round time-series storage
-
 Flexible plotting
-
 Cluster-based analysis of plate data
-
 A version formatted for publication supplement
 
 A version tailored for a synthetic biology portfolio
