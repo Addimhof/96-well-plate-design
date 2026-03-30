@@ -237,7 +237,7 @@ def save_plate_to_csv():
                 row_values.append(value)
             writer.writerow([row_label] + row_values)
 save_button = tk.Button(window, text= "Save Curretn Data", command=save_plate_to_csv)
-save_button.grid(row=rows+2, column=0, columnspan=12, pady=5)
+save_button.grid(row = rows+2, column=0, columnspan=12, pady=5)
 
 def start_round():
     global round_number, well_data
