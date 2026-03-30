@@ -11,7 +11,9 @@ import os
 
 
 DEV_MODE = True
-CSV_FOLDER = "plate_test_rounds_native"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_FOLDER = os.path.join(BASE_DIR, "plate_test_rounds_native")
+ICON_PATH = os.path.join(BASE_DIR, "Ecoli.png")
 def load_all_rounds_from_folder(folder):
     global well_data, well_history, round_number
 
@@ -75,7 +77,7 @@ window = Tk()
 
 pressed = False
 window.title("96 Well Plate")
-icon = PhotoImage(file='Ecoli.png')
+icon = PhotoImage(file=ICON_PATH)
 window.iconphoto(True, icon)
 window.config(background="white")
 
@@ -258,14 +260,22 @@ def plot_well_history():
     for well, history in well_history.items():
         if not(any(v != 0 for v in history["od"]) or any(v !=0 for v in history["rfu"])):
             continue
-        rounds= list(range(1, len(history["od"]) + 1))
+        ratio_values = compute_rfu_od_ratio(history["od"], history["rfu"])
+        ratio_values = fill_nans(ratio_values)
+        if np.all(np.isnan(ratio_values)):
+            continue
+        rounds = list(range(1, len(ratio_values) + 1))
 
         plt.figure(figsize=(6,4))
-        plt.plot(rounds, history["od"], marker= 'o', label="od")
-        plt.plot(rounds, history["rfu"], marker='x', label='rfu')
+        plt.plot(rounds, ratio_values, marker='o', label="RFU/OD")
         plt.title(f"Well {well} ({history['promoter']} | {history['ahl']})")
         plt.xlabel("Round")
-        plt.ylabel("Value")
+        plt.ylabel("RFU/OD")
+        ax = plt.gca()
+        ax.yaxis.tick_right()
+        ax.yaxis.set_label_position("right")
+        ax.tick_params(axis="y", left=False, right=True)
+        ax.spines["left"].set_visible(False)
         plt.legend()
         plt.show()
 
@@ -273,6 +283,24 @@ def trim_empties(values):
     while values and (values[-1] == "" or values[-1] is None):
         values.pop()
     return values
+
+def compute_rfu_od_ratio(od_values, rfu_values):
+    max_len = max(len(od_values), len(rfu_values))
+    od_arr = np.array(od_values, dtype=float)
+    rfu_arr = np.array(rfu_values, dtype=float)
+    od_padded = np.pad(od_arr, (0, max_len - len(od_arr)), constant_values=np.nan)
+    rfu_padded = np.pad(rfu_arr, (0, max_len - len(rfu_arr)), constant_values=np.nan)
+    return np.where(od_padded != 0, rfu_padded / od_padded, np.nan)
+
+def fill_nans(y):
+    y = np.array(y, dtype=float)
+    n = len(y)
+    x = np.arange(n)
+    mask = ~np.isnan(y)
+    if mask.sum() < 2:
+        return y
+    y[~mask] = np.interp(x[~mask], x[mask], y[mask])
+    return y
 
 def group_wells_by(field):
     groups = {}
@@ -443,24 +471,29 @@ def select_and_plot_wells():
     # --- Step 4: Standard plotting function (NEW) ---
     def plot_standard(selected_wells):
         fig, ax1 = plt.subplots(figsize=(8,5))
-        ax2 = ax1.twinx()
         colors = plt.cm.tab10.colors
         color_index = 0
 
         for well in selected_wells:
             history = well_history[well]
-            rounds = list(range(1, len(history["od"])+1))
-            ax1.plot(rounds, history["od"], marker='o', linestyle='-', label=f"{history['promoter']} ({history['ahl']}) OD", color=colors[color_index % len(colors)])
-            ax2.plot(rounds, history["rfu"], marker='x', linestyle='--', label=f"{history['promoter']} ({history['ahl']}) RFU", color=colors[color_index % len(colors)])
+            ratio_values = compute_rfu_od_ratio(history["od"], history["rfu"])
+            ratio_values = fill_nans(ratio_values)
+            if np.all(np.isnan(ratio_values)):
+                continue
+            rounds = list(range(1, len(ratio_values)+1))
+            ax1.plot(rounds, ratio_values, marker='o', linestyle='-', label=f"{history['promoter']} ({history['ahl']}) RFU/OD", color=colors[color_index % len(colors)])
             color_index += 1
 
         ax1.set_xlabel("Round")
-        ax1.set_ylabel("OD")
-        ax2.set_ylabel("RFU")
-        ax1.set_title("Selected Wells OD & RFU")
+        ax1.set_ylabel("RFU/OD")
+        ax1.set_title("Selected Wells RFU/OD")
+        ax1.yaxis.tick_right()
+        ax1.yaxis.set_label_position("right")
+        ax1.tick_params(axis="y", left=False, right=True)
+        ax1.spines["left"].set_visible(False)
 
         # --- Show main graph ---
-        lines = ax1.get_lines() + ax2.get_lines()
+        lines = ax1.get_lines()
         labels = [l.get_label() for l in lines]
         fig.show()
 
@@ -499,7 +532,6 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
     plot_window = tk.Toplevel()
     plot_window.title("Clustered Wells Plot")
     fig, ax_od = plt.subplots(figsize=(9,6))
-    ax_rfu = ax_od.twinx()
     colors = plt.cm.tab10.colors
 
     max_rounds = max(len(well_history[w]["od"]) for w in selected_wells)
@@ -515,9 +547,13 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
         for cid, wells in od_clusters.items():
             mean_od = np.array([well_history[w]["od"] for w in wells], dtype=object)
             mean_od = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_od], axis=0)
-            line = ax_od.plot(rounds, mean_od, color=colors[cid % len(colors)],
-                              linestyle="-", linewidth=2, label=f"Cluster {cid} OD (n={len(wells)})")
-            legend_items.append((line[0], f"Cluster {cid} OD (n={len(wells)})"))
+            mean_rfu = np.array([well_history[w]["rfu"] for w in wells], dtype=object)
+            mean_rfu = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_rfu], axis=0)
+            ratio_curve = np.where(mean_od != 0, mean_rfu / mean_od, np.nan)
+            ratio_curve = fill_nans(ratio_curve)
+            line = ax_od.plot(rounds, ratio_curve, color=colors[cid % len(colors)],
+                              linestyle="-", linewidth=2, label=f"Cluster {cid} from OD (n={len(wells)})")
+            legend_items.append((line[0], f"Cluster {cid} from OD (n={len(wells)})"))
 
     # RFU clustering
     if signals_selected.get("RFU", False):
@@ -525,16 +561,23 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
         rfu_cluster_ids = cp.cluster_signal(X_rfu, clustering_mode, n_clusters, dbscan_eps)
         rfu_clusters = cp.build_cluster_map(labels_rfu, rfu_cluster_ids)
         for cid, wells in rfu_clusters.items():
+            mean_od = np.array([well_history[w]["od"] for w in wells], dtype=object)
+            mean_od = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_od], axis=0)
             mean_rfu = np.array([well_history[w]["rfu"] for w in wells], dtype=object)
             mean_rfu = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_rfu], axis=0)
-            line = ax_rfu.plot(rounds, mean_rfu, color=colors[cid % len(colors)],
-                               linestyle="--", linewidth=2, label=f"Cluster {cid} RFU (n={len(wells)})")
-            legend_items.append((line[0], f"Cluster {cid} RFU (n={len(wells)})"))
+            ratio_curve = np.where(mean_od != 0, mean_rfu / mean_od, np.nan)
+            ratio_curve = fill_nans(ratio_curve)
+            line = ax_od.plot(rounds, ratio_curve, color=colors[cid % len(colors)],
+                               linestyle="--", linewidth=2, label=f"Cluster {cid} from RFU (n={len(wells)})")
+            legend_items.append((line[0], f"Cluster {cid} from RFU (n={len(wells)})"))
 
     ax_od.set_xlabel("Round")
-    ax_od.set_ylabel("OD")
-    ax_rfu.set_ylabel("RFU")
-    ax_od.set_title("Clustered Mean OD and RFU Curves")
+    ax_od.set_ylabel("RFU/OD")
+    ax_od.set_title("Clustered Mean RFU/OD Curves")
+    ax_od.yaxis.tick_right()
+    ax_od.yaxis.set_label_position("right")
+    ax_od.tick_params(axis="y", left=False, right=True)
+    ax_od.spines["left"].set_visible(False)
 
     # Display plot in its window
     canvas_plot = FigureCanvasTkAgg(fig, master=plot_window)
