@@ -12,6 +12,7 @@ import os
 
 DEV_MODE = True
 CSV_FOLDER = "plate_test_rounds_native"
+
 def load_all_rounds_from_folder(folder):
     global well_data, well_history, round_number
 
@@ -72,16 +73,20 @@ if DEV_MODE:
 
 #This is the window and its design
 window = Tk()
+#window.state("zoomed")     // Use this line if you want to automatically full screen when it pop up.
 
 pressed = False
 window.title("96 Well Plate")
-icon = PhotoImage(file='Ecoli.png')
+icon = PhotoImage(file = 'Ecoli.png')
 window.iconphoto(True, icon)
-window.config(background="white")
+window.config(background = "white")
 
 timer_label = tk.Label(window, text="Timer: 0 seconds")
-timer_label.grid(row=rows, column=0, columnspan=12, pady=10)
+timer_label.grid(row = rows, column = 0, columnspan = 12, pady = 10)
 seconds_passed = 0
+
+for extra_row in range(rows, rows + 6):
+    window.grid_rowconfigure(extra_row, weight = 0)
 
 def open_data_entry(well_name):
     popup = tk.Toplevel(window)
@@ -174,17 +179,19 @@ def button_pressed(row, col):
             button.config(relief="sunken", bg="dark grey")
 
 for r in range(rows):
+    window.grid_rowconfigure(r, weight = 1)
     for c in range(columns):
+        window.grid_columnconfigure(c, weight = 1)
         button_states [(r, c)] = False
         well_name = f"{row_labels[r]}{c+1}"
 
         button = tk.Button(window,
                            text=well_name,
-                           width=6, height=2,
+                           #width=6, height=2,
                            bg="lightgrey",
                            command=lambda r=r, c=c: button_pressed(r, c,)
         )
-        button.grid(row=r, column=c, padx=2, pady=2)
+        button.grid(row=r, column=c, padx=2, pady=2, sticky = "nsew")
         buttons[(r, c)] = button
 
         button.bind("<Enter>", lambda e, w=well_name: on_hover(w))
@@ -284,6 +291,62 @@ def group_wells_by(field):
             groups[key].append(well)
     return groups
 
+def plot_rfu_od_vs_ahl():
+    from collections import defaultdict
+
+    ahl_ratios = defaultdict(list)
+
+    for well, history in well_history.items():
+        ahl = history.get("ahl", "").strip()
+        if not ahl:
+            continue
+        try:
+            ahl_float = float(ahl)
+        except ValueError:
+            continue
+
+        od_vals = np.array(history["od"], dtype = float)
+        rfu_vals = np.array(history["rfu"], dtype = float)
+
+        mean_od = np.mean(od_vals)
+        mean_rfu = np.mean(rfu_vals)
+
+        if mean_od > 0:
+            ahl_ratios[ahl_float].append(mean_rfu / mean_od)
+
+    if not ahl_ratios:
+        messagebox.showwarning("No Data", "No valid AHL/OD/RFU data found to plot.")
+        return
+
+    sorted_ahls = sorted(ahl_ratios.keys())
+
+    means = [np.mean(ahl_ratios[a]) for a in sorted_ahls]
+    stds  = [np.std(ahl_ratios[a])  for a in sorted_ahls]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    ax.errorbar(
+        sorted_ahls, means, yerr=stds,
+        fmt='o-',
+        color='steelblue',
+        ecolor='lightsteelblue',
+        elinewidth=1.5,
+        capsize=4,
+        linewidth=2,
+        markersize=7,
+        label="Mean RFU/OD ± SD"
+    )
+
+    ax.set_xscale("log")
+    ax.set_xlabel("AHL Concentration (log scale)", fontsize = 12)
+    ax.set_ylabel("RFU / OD", fontsize = 12)
+    ax.set_title("Normalized Fluorescence (RFU/OD) vs AHL Concentration", fontsize = 13)
+    ax.legend(fontsize=10)
+    ax.grid(True, which = "both", linestyle = "--", alpha = 0.4)
+
+    plt.tight_layout()
+    plt.show(block = True)
+
 
 def select_and_plot_wells():
     import cluster_plate as cp  # Ensure cluster_plate.py is in the same folder
@@ -292,15 +355,15 @@ def select_and_plot_wells():
     well_popup = tk.Toplevel(window)
     well_popup.title("Select Wells to Plot")
 
-    canvas = tk.Canvas(well_popup, height=300)
-    v_scrollbar = tk.Scrollbar(well_popup, orient="vertical", command=canvas.yview)
+    canvas = tk.Canvas(well_popup, height = 300)
+    v_scrollbar = tk.Scrollbar(well_popup, orient = "vertical", command = canvas.yview)
     frame = tk.Frame(canvas)
 
     frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
     canvas.create_window((0,0), window=frame, anchor="nw")
     canvas.configure(yscrollcommand=v_scrollbar.set)
 
-    canvas.grid(row=0, column=0, sticky="nsew")
+    canvas.grid(row = 0, column = 0, sticky="nsew")
     v_scrollbar.grid(row=0, column=1, sticky="ns")
     well_popup.grid_rowconfigure(0, weight=1)
     well_popup.grid_columnconfigure(0, weight=1)
@@ -343,8 +406,10 @@ def select_and_plot_wells():
             if history and (any(v != 0 for v in history["od"]) or any(v != 0 for v in history["rfu"])):
                 var = tk.BooleanVar()
                 well_vars[well] = var
-                cb = tk.Checkbutton(frame, text=f"{well} ({history['promoter']} | {history['ahl']})", variable=var)
-                cb.grid(row=row_index+r_i, column=c-1, padx=3, pady=3)
+                cb = tk.Checkbutton(frame, text = f"{well} ({history['promoter']} | {history['ahl']})", variable = var)
+                cb.grid(row = row_index+r_i, column = c-1, padx = 3, pady = 3)
+    
+    next_button_row = row_index + len(row_labels) + 1
 
     def go_to_graph_type():
         well_popup.destroy()
@@ -354,17 +419,17 @@ def select_and_plot_wells():
             return
         graph_type_popup(selected_wells)
 
-    tk.Button(frame, text="Next", command=go_to_graph_type).grid(row=rows+3, column=0, columnspan=columns, pady=10)
+    tk.Button(frame, text = "Next", command = go_to_graph_type).grid(row = next_button_row, column = 0, columnspan = columns, pady = 10)
 
     # --- Step 2: Graph type selection popup ---
     def graph_type_popup(selected_wells):
         popup = tk.Toplevel(window)
         popup.title("Select Graph Type")
 
-        tk.Label(popup, text="Select graph type:").pack(pady=5)
-        graph_type_var = tk.StringVar(value="all")
-        tk.Radiobutton(popup, text="Standard Graph", variable=graph_type_var, value="all").pack(anchor="w", padx=10)
-        tk.Radiobutton(popup, text="Clustered Graph", variable=graph_type_var, value="clustered").pack(anchor="w", padx=10)
+        tk.Label(popup, text="Select graph type:").pack(pady = 5)
+        graph_type_var = tk.StringVar(value = "all")
+        tk.Radiobutton(popup, text = "Standard Graph", variable=graph_type_var, value = "all").pack(anchor = "w", padx = 10)
+        tk.Radiobutton(popup, text = "Clustered Graph", variable=graph_type_var, value = "clustered").pack(anchor = "w", padx = 10)
 
         def go_next():
             popup.destroy()
@@ -373,7 +438,7 @@ def select_and_plot_wells():
             else:
                 cluster_options_popup(selected_wells)
 
-        tk.Button(popup, text="Next", command=go_next).pack(pady=10)
+        tk.Button(popup, text = "Next", command = go_next).pack(pady = 10)
 
     # --- Step 3: Cluster options popup ---
     def cluster_options_popup(selected_wells):
@@ -381,15 +446,15 @@ def select_and_plot_wells():
         popup.title("Cluster Options")
 
         tk.Label(popup, text="Select measurement(s) to cluster:").pack(pady=5)
-        od_var = tk.BooleanVar(value=True)
-        rfu_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(popup, text="OD", variable=od_var).pack(anchor="w", padx=10)
-        tk.Checkbutton(popup, text="RFU", variable=rfu_var).pack(anchor="w", padx=10)
+        od_var = tk.BooleanVar(value = True)
+        rfu_var = tk.BooleanVar(value = True)
+        tk.Checkbutton(popup, text = "OD", variable = od_var).pack(anchor = "w", padx = 10)
+        tk.Checkbutton(popup, text = "RFU", variable = rfu_var).pack(anchor = "w", padx = 10)
 
-        tk.Label(popup, text="Select signal features:").pack(pady=5)
+        tk.Label(popup, text="Select signal features:").pack(pady = 5)
         feature_vars = {}
-        for feat in ["total","peak","ending"]:
-            var = tk.BooleanVar(value=True)
+        for feat in ["total", "peak", "ending"]:
+            var = tk.BooleanVar(value = True)
             feature_vars[feat] = var
             tk.Checkbutton(popup, text=feat.capitalize(), variable=var).pack(anchor="w", padx=10)
 
@@ -464,6 +529,8 @@ def select_and_plot_wells():
         labels = [l.get_label() for l in lines]
         fig.show()
 
+        plt.show(block = False)
+
         # --- Separate legend window ---
         legend_fig = plt.figure("Legend Window", figsize=(6, max(4,len(labels)*0.35)))
         legend_ax = legend_fig.add_subplot(111)
@@ -472,6 +539,11 @@ def select_and_plot_wells():
         legend_ax.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
         legend_ax.set_title("Legend")
         legend_fig.show()
+
+        plt.show(block = False)
+
+        # RFU/OD vs AHL concentration 
+        plot_rfu_od_vs_ahl()
 
 
 

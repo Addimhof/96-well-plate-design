@@ -32,7 +32,7 @@ timer_label = tk.Label(window, text="Timer: 0 seconds")
 timer_label.grid(row=rows, column=0, columnspan=12, pady=10)
 seconds_passed = 0
 
-def logistic(t, OD_max, k, t0)
+# def logistic(t, OD_max, k, t0)
     
 
 def open_data_entry(well_name):

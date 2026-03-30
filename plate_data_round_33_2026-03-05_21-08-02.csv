@@ -1,0 +1,9 @@
+,1,2,3,4,5,6,7,8,9,10,11,12
+A,pTet|1||,pTet|0.1||,pLux|10||,Control|0.1||,pLux|100||,pLux|100||,Control|1||,pLux|100||,pBad|0.1||,pTet|1||,pBad|0.1||,pTet|1||
+B,pLux|1||,pBad|10||,pLux|1||,pLux|10||,Control|0.1||,pLux|100||,pTet|10||,Control|1||,pLux|1||,Control|0.1||,pTet|0.1||,pBad|0.1||
+C,pLux|1||,pTet|100||,Control|1||,pLux|1||,pTet|10||,pBad|100||,pLux|100||,Control|10||,Control|10||,Control|1||,Control|1||,pTet|0.1||
+D,pBad|10||,pLux|100||,Control|10||,pBad|0||,Control|10||,pBad|0||,pTet|0.1||,pBad|100||,Control|1||,Control|10||,pLux|0.1||,pLux|0||
+E,pTet|0||,pLux|10||,pLux|10||,pLux|1||,Control|10||,Control|100||,pTet|100||,pTet|0||,pLux|0.1||,pBad|1||,pTet|0.1||,pBad|1||
+F,pLux|10||,Control|0||,Control|1||,pBad|0||,pLux|1||,pBad|0.1||,pLux|1||,pBad|1||,pTet|1||,pTet|100||,pTet|100||,Control|0.1||
+G,Control|0||,Control|0.1||,pBad|1||,pBad|10||,pBad|0.1||,pLux|100||,pTet|10||,pBad|10||,pBad|100||,Control|10||,pBad|0.1||,pTet|1||
+H,pTet|0||,pBad|1||,pLux|10||,pLux|0.1||,pLux|10||,Control|0.1||,pTet|10||,pTet|0.1||,pLux|0||,pLux|10||,pLux|1||,Control|1||
