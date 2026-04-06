@@ -1,3 +1,4 @@
+
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from tkinter import *
@@ -8,11 +9,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import cluster_plate as cp
 import os
-#Libraries^^
 
-#Load Csvs From Folder For Plotting
+
 DEV_MODE = True
-CSV_FOLDER = "plate_test_rounds_native"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_FOLDER = os.path.join(BASE_DIR, "plate_test_rounds_native")
+ICON_PATH = os.path.join(BASE_DIR, "Ecoli.png")
 def load_all_rounds_from_folder(folder):
     global well_data, well_history, round_number
 
@@ -57,7 +59,7 @@ def load_all_rounds_from_folder(folder):
 
     print(f"✅ Loaded {round_number} rounds from folder '{folder}'")
 
-#Rows and columns is adjustable for the plate size
+#Rows and columns going from A-H(row) 8x12 grid (Can change the size w/ this)
 rows = 8
 columns = 12
 row_labels = [chr(i) for i in range(65, 65+rows)]
@@ -73,17 +75,16 @@ if DEV_MODE:
 
 #This is the window and its design
 window = Tk()
+
 pressed = False
 window.title("96 Well Plate")
-icon = PhotoImage(file='Ecoli.png')
+icon = PhotoImage(file=ICON_PATH)
 window.iconphoto(True, icon)
 window.config(background="white")
 
-#This is the time it's not currently shown (3/5/26) i'm not currently seeing a purpose for it.
 timer_label = tk.Label(window, text="Timer: 0 seconds")
 timer_label.grid(row=rows, column=0, columnspan=12, pady=10)
 seconds_passed = 0
-
 
 def open_data_entry(well_name):
     popup = tk.Toplevel(window)
@@ -166,11 +167,9 @@ def get_next_well(current_well):
     except ValueError:
         return None
 
-#This shows the well being hovered over on the title line of the window
 def on_hover(well_name):
     window.title(f"Hovering over {well_name}")
 
-#Changes the look of the button so the user knows whats been pressed
 def button_pressed(row, col):
        if not button_states[(row, col)]:
             button_states[(row, col)] = True
@@ -182,12 +181,20 @@ for r in range(rows):
         button_states [(r, c)] = False
         well_name = f"{row_labels[r]}{c+1}"
 
-        button = tk.Button(window, text=well_name, width=6, height=2, bg="lightgrey", command=lambda r=r, c=c: button_pressed(r, c,))
+        button = tk.Button(window,
+                           text=well_name,
+                           width=6, height=2,
+                           bg="lightgrey",
+                           command=lambda r=r, c=c: button_pressed(r, c,)
+        )
         button.grid(row=r, column=c, padx=2, pady=2)
         buttons[(r, c)] = button
 
         button.bind("<Enter>", lambda e, w=well_name: on_hover(w))
-        button.bind("<Button-1>", lambda e, r=r, c=c, w=well_name: (button_pressed(r, c), open_data_entry(w)))
+        button.bind("<Button-1>", lambda e, r=r, c=c, w=well_name: (
+            button_pressed(r, c),
+            open_data_entry(w)
+        ))
 
 def save_plate_to_csv():
     global round_number, well_history
@@ -254,14 +261,22 @@ def plot_well_history():
     for well, history in well_history.items():
         if not(any(v != 0 for v in history["od"]) or any(v !=0 for v in history["rfu"])):
             continue
-        rounds= list(range(1, len(history["od"]) + 1))
+        ratio_values = compute_rfu_od_ratio(history["od"], history["rfu"])
+        ratio_values = fill_nans(ratio_values)
+        if np.all(np.isnan(ratio_values)):
+            continue
+        rounds = list(range(1, len(ratio_values) + 1))
 
         plt.figure(figsize=(6,4))
-        plt.plot(rounds, history["od"], marker= 'o', label="od")
-        plt.plot(rounds, history["rfu"], marker='x', label='rfu')
+        plt.plot(rounds, ratio_values, marker='o', label="RFU/OD")
         plt.title(f"Well {well} ({history['promoter']} | {history['ahl']})")
         plt.xlabel("Round")
-        plt.ylabel("Value")
+        plt.ylabel("RFU/OD")
+        ax = plt.gca()
+        ax.yaxis.tick_right()
+        ax.yaxis.set_label_position("right")
+        ax.tick_params(axis="y", left=False, right=True)
+        ax.spines["left"].set_visible(False)
         plt.legend()
         plt.show()
 
@@ -269,6 +284,24 @@ def trim_empties(values):
     while values and (values[-1] == "" or values[-1] is None):
         values.pop()
     return values
+
+def compute_rfu_od_ratio(od_values, rfu_values):
+    max_len = max(len(od_values), len(rfu_values))
+    od_arr = np.array(od_values, dtype=float)
+    rfu_arr = np.array(rfu_values, dtype=float)
+    od_padded = np.pad(od_arr, (0, max_len - len(od_arr)), constant_values=np.nan)
+    rfu_padded = np.pad(rfu_arr, (0, max_len - len(rfu_arr)), constant_values=np.nan)
+    return np.where(od_padded != 0, rfu_padded / od_padded, np.nan)
+
+def fill_nans(y):
+    y = np.array(y, dtype=float)
+    n = len(y)
+    x = np.arange(n)
+    mask = ~np.isnan(y)
+    if mask.sum() < 2:
+        return y
+    y[~mask] = np.interp(x[~mask], x[mask], y[mask])
+    return y
 
 def group_wells_by(field):
     groups = {}
@@ -362,20 +395,17 @@ def select_and_plot_wells():
         tk.Radiobutton(popup, text="Standard Graph", variable=graph_type_var, value="all").pack(anchor="w", padx=10)
         tk.Radiobutton(popup, text="Clustered Graph", variable=graph_type_var, value="clustered").pack(anchor="w", padx=10)
 
-        show_legend_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(popup, text="Show Legend Window", variable=show_legend_var).pack(anchor="w", padx=10)
-        
         def go_next():
             popup.destroy()
             if graph_type_var.get() == "all":
-                plot_standard(selected_wells, show_legend_var.get())
+                plot_standard(selected_wells)
             else:
-                cluster_options_popup(selected_wells, show_legend_var.get())
+                cluster_options_popup(selected_wells)
 
         tk.Button(popup, text="Next", command=go_next).pack(pady=10)
 
     # --- Step 3: Cluster options popup ---
-    def cluster_options_popup(selected_wells, show_legend):
+    def cluster_options_popup(selected_wells):
         popup = tk.Toplevel(window)
         popup.title("Cluster Options")
 
@@ -434,45 +464,48 @@ def select_and_plot_wells():
                 include_promoter=include_promoter_var.get(),
                 include_ahl=include_ahl_var.get(),
                 clustering_mode="kmeans" if n_clusters else "auto",
-                n_clusters=n_clusters if n_clusters else 4,
-                show_legend=show_legend
+                n_clusters=n_clusters if n_clusters else 4
             )
 
         tk.Button(popup, text="Plot", command=plot_clusters).pack(pady=10)
 
     # --- Step 4: Standard plotting function (NEW) ---
-    def plot_standard(selected_wells, show_legend=True):
+    def plot_standard(selected_wells):
         fig, ax1 = plt.subplots(figsize=(8,5))
-        ax2 = ax1.twinx()
         colors = plt.cm.tab10.colors
         color_index = 0
 
         for well in selected_wells:
             history = well_history[well]
-            rounds = list(range(1, len(history["od"])+1))
-            ax1.plot(rounds, history["od"], marker='o', linestyle='-', label=f"{history['promoter']} ({history['ahl']}) OD", color=colors[color_index % len(colors)])
-            ax2.plot(rounds, history["rfu"], marker='x', linestyle='--', label=f"{history['promoter']} ({history['ahl']}) RFU", color=colors[color_index % len(colors)])
+            ratio_values = compute_rfu_od_ratio(history["od"], history["rfu"])
+            ratio_values = fill_nans(ratio_values)
+            if np.all(np.isnan(ratio_values)):
+                continue
+            rounds = list(range(1, len(ratio_values)+1))
+            ax1.plot(rounds, ratio_values, marker='o', linestyle='-', label=f"{history['promoter']} ({history['ahl']}) RFU/OD", color=colors[color_index % len(colors)])
             color_index += 1
 
         ax1.set_xlabel("Round")
-        ax1.set_ylabel("OD")
-        ax2.set_ylabel("RFU")
-        ax1.set_title("Selected Wells OD & RFU")
+        ax1.set_ylabel("RFU/OD")
+        ax1.set_title("Selected Wells RFU/OD")
+        ax1.yaxis.tick_right()
+        ax1.yaxis.set_label_position("right")
+        ax1.tick_params(axis="y", left=False, right=True)
+        ax1.spines["left"].set_visible(False)
 
         # --- Show main graph ---
-        lines = ax1.get_lines() + ax2.get_lines()
+        lines = ax1.get_lines()
         labels = [l.get_label() for l in lines]
         fig.show()
 
         # --- Separate legend window ---
-        if show_legend:
-            legend_fig = plt.figure("Legend Window", figsize=(6, max(4,len(labels)*0.35)))
-            legend_ax = legend_fig.add_subplot(111)
-            legend_ax.axis("off")
-            ncols = max(1,len(labels)//15)
-            legend_ax.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
-            legend_ax.set_title("Legend")
-            legend_fig.show()
+        legend_fig = plt.figure("Legend Window", figsize=(6, max(4,len(labels)*0.35)))
+        legend_ax = legend_fig.add_subplot(111)
+        legend_ax.axis("off")
+        ncols = max(1,len(labels)//15)
+        legend_ax.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
+        legend_ax.set_title("Legend")
+        legend_fig.show()
 
 
 
@@ -485,7 +518,7 @@ plot_selected_button.grid(row=rows+3, column=0, columnspan=12, pady=10)
 
 def plot_clusters_gui(selected_wells, features_selected, signals_selected,
                       include_promoter=False, include_ahl=False,
-                      clustering_mode="kmeans", n_clusters=4, dbscan_eps=0.5, show_legend=True):
+                      clustering_mode="kmeans", n_clusters=4, dbscan_eps=0.5):
     import cluster_plate as cp
     from matplotlib.lines import Line2D
 
@@ -500,7 +533,6 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
     plot_window = tk.Toplevel()
     plot_window.title("Clustered Wells Plot")
     fig, ax_od = plt.subplots(figsize=(9,6))
-    ax_rfu = ax_od.twinx()
     colors = plt.cm.tab10.colors
 
     max_rounds = max(len(well_history[w]["od"]) for w in selected_wells)
@@ -516,9 +548,13 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
         for cid, wells in od_clusters.items():
             mean_od = np.array([well_history[w]["od"] for w in wells], dtype=object)
             mean_od = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_od], axis=0)
-            line = ax_od.plot(rounds, mean_od, color=colors[cid % len(colors)],
-                              linestyle="-", linewidth=2, label=f"Cluster {cid} OD (n={len(wells)})")
-            legend_items.append((line[0], f"Cluster {cid} OD (n={len(wells)})"))
+            mean_rfu = np.array([well_history[w]["rfu"] for w in wells], dtype=object)
+            mean_rfu = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_rfu], axis=0)
+            ratio_curve = np.where(mean_od != 0, mean_rfu / mean_od, np.nan)
+            ratio_curve = fill_nans(ratio_curve)
+            line = ax_od.plot(rounds, ratio_curve, color=colors[cid % len(colors)],
+                              linestyle="-", linewidth=2, label=f"Cluster {cid} from OD (n={len(wells)})")
+            legend_items.append((line[0], f"Cluster {cid} from OD (n={len(wells)})"))
 
     # RFU clustering
     if signals_selected.get("RFU", False):
@@ -526,16 +562,23 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
         rfu_cluster_ids = cp.cluster_signal(X_rfu, clustering_mode, n_clusters, dbscan_eps)
         rfu_clusters = cp.build_cluster_map(labels_rfu, rfu_cluster_ids)
         for cid, wells in rfu_clusters.items():
+            mean_od = np.array([well_history[w]["od"] for w in wells], dtype=object)
+            mean_od = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_od], axis=0)
             mean_rfu = np.array([well_history[w]["rfu"] for w in wells], dtype=object)
             mean_rfu = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_rfu], axis=0)
-            line = ax_rfu.plot(rounds, mean_rfu, color=colors[cid % len(colors)],
-                               linestyle="--", linewidth=2, label=f"Cluster {cid} RFU (n={len(wells)})")
-            legend_items.append((line[0], f"Cluster {cid} RFU (n={len(wells)})"))
+            ratio_curve = np.where(mean_od != 0, mean_rfu / mean_od, np.nan)
+            ratio_curve = fill_nans(ratio_curve)
+            line = ax_od.plot(rounds, ratio_curve, color=colors[cid % len(colors)],
+                               linestyle="--", linewidth=2, label=f"Cluster {cid} from RFU (n={len(wells)})")
+            legend_items.append((line[0], f"Cluster {cid} from RFU (n={len(wells)})"))
 
     ax_od.set_xlabel("Round")
-    ax_od.set_ylabel("OD")
-    ax_rfu.set_ylabel("RFU")
-    ax_od.set_title("Clustered Mean OD and RFU Curves")
+    ax_od.set_ylabel("RFU/OD")
+    ax_od.set_title("Clustered Mean RFU/OD Curves")
+    ax_od.yaxis.tick_right()
+    ax_od.yaxis.set_label_position("right")
+    ax_od.tick_params(axis="y", left=False, right=True)
+    ax_od.spines["left"].set_visible(False)
 
     # Display plot in its window
     canvas_plot = FigureCanvasTkAgg(fig, master=plot_window)
@@ -543,24 +586,23 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
     canvas_plot.get_tk_widget().pack(fill="both", expand=True)
 
     # --- Create separate legend window ---
-    if show_legend:
-        legend_window = tk.Toplevel()
-        legend_window.title("Legend")
-        fig_legend, ax_legend = plt.subplots(figsize=(6, max(4, len(legend_items)*0.35)))
-        ax_legend.axis("off")
+    legend_window = tk.Toplevel()
+    legend_window.title("Legend")
+    fig_legend, ax_legend = plt.subplots(figsize=(6, max(4, len(legend_items)*0.35)))
+    ax_legend.axis("off")
 
-        # Create dummy lines for legend
-        lines = [Line2D([0], [0], color=l.get_color(), linestyle=l.get_linestyle(), linewidth=l.get_linewidth())
-                for l, _ in legend_items]
-        labels = [label for _, label in legend_items]
+    # Create dummy lines for legend
+    lines = [Line2D([0], [0], color=l.get_color(), linestyle=l.get_linestyle(), linewidth=l.get_linewidth())
+             for l, _ in legend_items]
+    labels = [label for _, label in legend_items]
 
-        ncols = max(1, len(labels)//15)
-        ax_legend.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
-        ax_legend.set_title("Legend")
+    ncols = max(1, len(labels)//15)
+    ax_legend.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
+    ax_legend.set_title("Legend")
 
-        canvas_legend = FigureCanvasTkAgg(fig_legend, master=legend_window)
-        canvas_legend.draw()
-        canvas_legend.get_tk_widget().pack(fill="both", expand=True)
+    canvas_legend = FigureCanvasTkAgg(fig_legend, master=legend_window)
+    canvas_legend.draw()
+    canvas_legend.get_tk_widget().pack(fill="both", expand=True)
 
 update_timer()
 window.mainloop()
