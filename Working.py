@@ -6,36 +6,73 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
+#Go to Pylance Settings, then Python > Analysis: Extra Paths,
+#Copy your working directory (where this file is) as text and paste it into the field. Pylance will complain otherwise.
 import cluster_plate as cp
 import os
 
+#From now on (3/8/26), please annotate what your functions do with the below format.
 
-DEV_MODE = True
-CSV_FOLDER = "plate_test_rounds_native"
+def random_function():
+    #This is for demonstration. Please don't call this. Please remove prior to merging with main.
+    """
+    Desc: Basic description of what your function does. Be specific with what data's being modified and how.
+
+    Pre: What variables need to be passed to it? What conditions need to be satisfied pre-call?
+
+    Post: How are variables modified? If the function prints something to console/screen, what does it do?
+    """
+
+#Whenever you declare a variable, also annotate it on the same line with what it represents. For example:
+#adenine_count = 5 #Stores the total amount of "A" parsed from a sequence string.
+#This applies for all new variables declared within a scope!
+
+DEV_MODE = True #Debug flag. Treat as constant. DO NOT change in any function.
+CSV_FOLDER = "plate_test_rounds_native" #Points to file for csv to do stuff with. Treat as constant. DO NOT change in any function.
 def load_all_rounds_from_folder(folder):
+    """
+    Desc: First function that should be called in main. Loads csv well data from a file path and documents everything in global well history
+
+    Pre: Needs a string file path called folder.
+
+    Post: well_data, well_history, and round_number are all global variables to be accessed later.
+    """  
     global well_data, well_history, round_number
+    #well_data: dictionary for associating wells with the data they store. Most recent data.
+    #well_history: dictionary for associating wells with the data they store. Past data.
+    #round_number: Tracks how many CSV files have been imported. Increments each time an import occurs following sorting.
 
     well_data = {}
     well_history = {}
     round_number = 0
+    #A sorted list of all CSV filenames within the folder name string passed to this function.
 
-    csv_files = sorted([f for f in os.listdir(folder) if f.endswith(".csv")])
+    csv_files = sorted([f for f in os.listdir(folder) if f.endswith(".csv")]) #Declare file path to open for csv_file. Probably a String but technically Any.
+
     for csv_file in csv_files:
+        
         round_number += 1
-        path = os.path.join(folder, csv_file)
+        path = os.path.join(folder, csv_file) #Declare file path to open for csv_file. Probably a String but technically Any.
 
         with open(path, newline="") as f:
-            reader = csv.reader(f)
-            header = next(reader)
+            #Every instance of f is a file being opened here.
+            reader = csv.reader(f) #Instance of a parsed csv file.
+            header = next(reader) #Currently unused within scope. Please do something with this or delete it.
             for row in reader:
-                row_label = row[0]
-                for i, cell in enumerate(row[1:]):
-                    well = f"{row_label}{i+1}"
+                row_label = row[0] #First element for every row. A string for diffrientiating rows.
+                for i, cell in enumerate(row[1:]): #Loop to do things per cell.
+                    well = f"{row_label}{i+1}" #Construct a well title. "A1", "A2", etc.
                     promoter, ahl, od, rfu = cell.split("|")
+                    #promoter: Promoter type. Anderson mutants for where we are now. "J23###"
+                    #ahl: AHL concentration.
+                    #od: Optical Density. Estimated density of bacteria.
+                    #rfu: Relative Fluorescence Units. DV.
 
                     od_val = float(od) if od else 0
                     rfu_val = float(rfu) if rfu else 0
+                    #od_val, rfu_val: make these floats bc python sucks
 
+                    #labelling for wells with non-existant data. Null values to not cause errors when we graph things.
                     if well not in well_history:
                         well_history[well] = {
                             "promoter": promoter,
@@ -43,10 +80,11 @@ def load_all_rounds_from_folder(folder):
                             "od": [],
                             "rfu": []
                         }
-
+                    #Associate the float values that do exist for the well_history with their appropriate wells.
                     well_history[well]["od"].append(od_val)
                     well_history[well]["rfu"].append(rfu_val)
 
+                    #Label EVERYTHING for wells that exist
                     well_data[well] = {
                         "promoter": promoter,
                         "ahl": ahl,
@@ -57,47 +95,63 @@ def load_all_rounds_from_folder(folder):
     print(f"✅ Loaded {round_number} rounds from folder '{folder}'")
 
 #Rows and columns going from A-H(row) 8x12 grid (Can change the size w/ this)
-rows = 8
-columns = 12
-row_labels = [chr(i) for i in range(65, 65+rows)]
-well_data = {}
-buttons = {}
-button_states = {}
-round_number = 1
-well_history = {}
-DEV_MODE = True
+rows = 8 #Number of rows
+columns = 12 #Number of columns
+row_labels = [chr(i) for i in range(65, 65+rows)] #Chr referesneces ASCII index for uppercase A. Iterates from there for rows. > 26 rows means funny results.
+well_data = {} #Dictionary for associating wells with the data they store. Most recent data.
+buttons = {} #Dictionary of buttons. Each I believe corresponds with a well in the GUI.
+button_states = {} #Holds all states associated with the buttons.
+round_number = 1 #Initial round number. Associated with CSVs imported.
+well_history = {} #Dictionary for associating wells with the data they store. Past data.
 
 if DEV_MODE:
     load_all_rounds_from_folder(CSV_FOLDER)
 
 #This is the window and its design
-window = Tk()
+window = Tk() #Tkinter window template/object. It may be useful to roll all of the params into this constructor.
 
 pressed = False
-window.title("96 Well Plate")
-icon = PhotoImage(file='Ecoli.png')
-window.iconphoto(True, icon)
-window.config(background="white")
+window.title("96 Well Plate") #Window display title. Reads at the top.
+icon = PhotoImage(file='Ecoli.png') #Filepath for Window icon. Shows up in top-left and task bar.
+window.iconphoto(True, icon) #Set the window icon to display.
+window.config(background="white") #Background window color. Maybe tone this down from straight #ffffff.
 
-timer_label = tk.Label(window, text="Timer: 0 seconds")
-timer_label.grid(row=rows, column=0, columnspan=12, pady=10)
-seconds_passed = 0
+timer_label = tk.Label(window, text="Timer: 0 seconds") #Places a label (Basically rendered text) in the top-middle of the window.
+timer_label.grid(row=rows, column=0, columnspan=12, pady=10) #Positions the label at the top of each of the rows. Potential bug: columnspan should be = columns
+seconds_passed = 0 #Label used for timer updates. Modified by update_timer().
 
+#As a note, well_name is not actually any variable modified outside of a function. It's another way of referring to well_history[well].
+#TODO: Pick well_name or well as the variable to reference individual wells.
 def open_data_entry(well_name):
-    popup = tk.Toplevel(window)
-    popup.title(f"Enter data for {well_name}")
+    """
+    Desc: A popup window that handles editing of the well_data referenced in the passed param. Also includes definitions to save data.
 
+    Pre: Called with a well/well_name to reference.
+
+    Post: This function acts as a w included save_and_close(), see that function for more details.
+    """  
+    popup = tk.Toplevel(window) #Precisely what it sounds like. Creates a popup layered on top of the main window.
+    popup.title(f"Enter data for {well_name}") #Pass the well title here. The popup also has a name.
+
+    #Header text. User should put entries in widgets under this.
     tk.Label(popup, text=f"Data for {well_name}", font=("Times New Roman", 12)).pack(pady=5)
 
+    #Change the promoter with the following widget. The label is anchored to the left.
     tk.Label(popup, text="Promoter:").pack(anchor="w", padx=10)
-    entry_promoter = tk.Entry(popup, width=25)
-    entry_promoter.insert(0, well_data.get(well_name, {}).get("promoter", ""))
+    entry_promoter = tk.Entry(popup, width=25) #entry_promoter: Creates a text entry box with a width of 25 characters.
+    entry_promoter.insert(0, well_data.get(well_name, {}).get("promoter", "")) 
+    #Anything that is typed in here gets stuck as the appropriate well_data promoter
 
+    #Only the first csv imported should have its promoters edited? I might need more explanation here. -- Julian
     if round_number > 1:
         entry_promoter.config(state="disabled")
 
+    #Layout the entry box.
     entry_promoter.pack(padx=10, pady=5)
 
+    #Everything below follows a similar pattern to entry_promoter. TODO: Make a function to do this.
+    #They correspond in this way: entry_ahl -> "ahl", entry_od -> "od", entry_rfu -> "rfu"
+    #You can change OD and RFU between csv rounds.
 
     tk.Label(popup, text="AHL Concentration:").pack(anchor="w", padx=10)
     entry_ahl = tk.Entry(popup, width=25)
@@ -107,8 +161,6 @@ def open_data_entry(well_name):
         entry_ahl.config(state="disabled")
 
     entry_ahl.pack(padx=10, pady=5)
-
-
 
     tk.Label(popup, text="OD:").pack(anchor="w", padx=5)
     entry_od = tk.Entry(popup, width=25)
@@ -120,12 +172,23 @@ def open_data_entry(well_name):
     entry_rfu.insert(0, well_data.get(well_name,{}).get("rfu",""))
     entry_rfu.pack(padx=10,pady=10)
 
+    #Data edits be here
     def save_and_close(open_next=True):
+        """
+        Desc: Assigns the changes made in the open_data_entry() popup to the wells and csv data.
+
+        Pre: The open_next param, true by default, opens the next well entry recursively depending on user input.
+
+        Post: save_plate_to_csv() will always eventually be called. This by extension has file I/O output.
+        """  
+        #Make some variables equal to the inputs gained from the tk Entries
         promoter = entry_promoter.get()
         ahl = entry_ahl.get()
         od = entry_od.get()
         rfu = entry_rfu.get()
 
+        #Assign to well data. Clean empty entries.
+        #This is also a repeat of a motif in load_all_rounds_from_folder(). TODO: Make this a function.
         well_data[well_name] = {
             "promoter": promoter,
             "ahl": ahl,
@@ -140,35 +203,66 @@ def open_data_entry(well_name):
                 "rfu": []
             }   
 
+        #Kill the window.
         popup.destroy()
+        #Below is recursive calling that if the open_next param is true, will allow for consecutive data entry.
         if open_next:
             next_well = get_next_well(well_name)
             if next_well:
                 open_data_entry(next_well)
             else:
+                #If there's no more data to enter, save everything.
                 save_plate_to_csv()
         else:
             save_plate_to_csv()
+    #The Enter (Return) key should save the data and close the window
     popup.bind("<Return>", lambda e: save_and_close(True))
+    #Two more buttons for saving. Done is recursive. Finish is not.
+    #MAYBE TODO: "Done" should be "Done (Open Next)" for user-friendliness.
     tk.Button(popup, text="Done", command=lambda: save_and_close(True)).pack(pady=5)
     tk.Button(popup, text="Finish", command= lambda: save_and_close(False)).pack(pady=5)
 
 def get_next_well(current_well):
-    all_wells = [f"{r}{c+1}" for r in row_labels for c in range(columns)]
+    """
+    Desc: Fetches the next well accounting for rows of columns.
+
+    Pre: Called with a current_well to index.
+
+    Post: Gets the index of the next well if it exists, otherwise returns None.
+    """  
+    all_wells = [f"{r}{c+1}" for r in row_labels for c in range(columns)] #A 2D list of ALL the wells.
+    #Error handling? In my GUI?
     try:
+        #An index is grabbed from the the current_well passed, from its position in all_wells.
         index = all_wells.index(current_well)
+        #If there's a well following, return the index of the next well. Or else return None.
         if index + 1 < len(all_wells):
             return all_wells[index+1]
         else:
             return None
     except ValueError:
+        #If there's not an applicable value return none.
         return None
 
 def on_hover(well_name):
+    """
+    Desc: Very simple function. Changes the window title when called to reference a specific well button label.
+
+    Pre: Called with a well/well_name to reference.
+
+    Post: Changes the tkinter window title to reference the well/well_name.
+    """  
     window.title(f"Hovering over {well_name}")
 
 def button_pressed(row, col):
-       if not button_states[(row, col)]:
+    """
+    Desc: Also simple GUI handling. Assigns a True button_state and changes its appearance if clicked.
+
+    Pre: Called with a row and column for the button, assuming they are in a 2D matrix.
+
+    Post: Changes the button_state and its appearance to reflect clicking on it.
+    """  
+    if not button_states[(row, col)]:
             button_states[(row, col)] = True
             button = buttons[(row, col)]
             button.config(relief="sunken", bg="dark grey")
