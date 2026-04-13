@@ -380,44 +380,84 @@ def group_wells_by(field):
 
 
 def select_and_plot_wells():
+    """
+    Desc: This function is a main for all graphing operations, separated into four broad steps with a final matplotlib graph within a popup window.
+
+    Pre: Presumably uses globals since there are no arguments. Outside of this function a button is needed to call from GUI.
+
+    Post: Produces matplotlib figures in windows created and handled within the function.
+    """  
     import cluster_plate as cp  # Ensure cluster_plate.py is in the same folder
 
     # --- Step 1: Well selection popup ---
-    well_popup = tk.Toplevel(window)
+    well_popup = tk.Toplevel(window) #Top-level window prompting user on which wells to plot. Includes more setup below.
     well_popup.title("Select Wells to Plot")
 
-    canvas = tk.Canvas(well_popup, height=300)
-    v_scrollbar = tk.Scrollbar(well_popup, orient="vertical", command=canvas.yview)
-    frame = tk.Frame(canvas)
+    canvas = tk.Canvas(well_popup, height=300) #Canvas is utilized here to arrange elements within the window accessible have a scrollbar.
+    #^Could be renamed for descriptiveness
+    v_scrollbar = tk.Scrollbar(well_popup, orient="vertical", command=canvas.yview) #Create a vertical scroll bar for viewing elements listed vertically in the popup
+    frame = tk.Frame(canvas) #Tie the canvas to a frame, which actually allows for easier widget handling.
 
+    #In order: <Configure> is triggered when window size changes, the lambda is a short function triggered by this event that calls for elements in the bounding box to be shifted
     frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    #Create the frame as a window with a topleft anchor
     canvas.create_window((0,0), window=frame, anchor="nw")
+    #Display the scrollbar
     canvas.configure(yscrollcommand=v_scrollbar.set)
-
+    
+    #This expands the canvas to expand to the bounds of the created window
     canvas.grid(row=0, column=0, sticky="nsew")
+    #Expands the scrollbar to the top and bottom, and assigns it to the eastmost column
     v_scrollbar.grid(row=0, column=1, sticky="ns")
+    #Blow up the canvas so it takes up most of the window.
     well_popup.grid_rowconfigure(0, weight=1)
     well_popup.grid_columnconfigure(0, weight=1)
 
+    #Displays "Select wells to plot" as a header
     tk.Label(frame, text="Select wells to plot").grid(row=0, column=0, columnspan=columns, pady=5)
 
-    well_vars = {}
-    promoter_groups = group_wells_by("promoter")
+    well_vars = {} #Based on usage in functions well_vars acts as a boolean selection/filtering tool for picking elements promoter_groups and ahl_groups
+    #Both promoter_groups and ahl_groups are lists of well data added to a group if their promoter or ahl data exists. Ethan should annotate the function called.
+    promoter_groups = group_wells_by("promoter")  
     ahl_groups = group_wells_by("ahl")
 
+    #Inner function set here (And any definitions henceforth) are utilized to access variables within select_and_plot_wells()
     def select_group(well_list):
+        """
+        Desc: When called with a list, will compare keys present in both the list provided and well_vars, setting the associated well_vars value to true if both keys 
+        exist.
+
+        Pre: Pass well_list in. In calls within select_and_plot_wells, this is for promoter_groups and ahl_groups. Mayber rename well_list to well_group.
+
+        Post: Edits well_vars with boolean definitions in present items. Used with a global this could be somewhat destructive.
+        When we refactor I recommend passing well_vars in and using a temporary dictionary that is returned, with well_vars set to it.
+        """  
         for w in well_list:
             if w in well_vars:
                 well_vars[w].set(True)
 
+    #select_all_var is for selecting all the buttons in the window.
     select_all_var = tk.BooleanVar(value=False)
     def toggle_select_all():
+        """
+        Desc: Selects all of the wells present within the window.
+
+        Pre: Accesses the key value pairs in well_vars.
+
+        Post: Indiscriminantly sets all values in well_vars to true via set function.
+        """  
         for var in well_vars.values():
             var.set(select_all_var.get())
+    
+    #Button for checking all wells, acted upon by the above toggle_select_all() function.
     tk.Checkbutton(frame, text="Select All Wells", variable=select_all_var, command=toggle_select_all).grid(row=1, column=0, columnspan=columns, pady=5)
     tk.Label(frame, text="Select by Promoter").grid(row=2, column=0, columnspan=columns, pady=5)
 
+    #row_offset starts buttons a ways from the left edge so that they're roughly centered.
     row_offset = 3
+
+    #Below two enumerated loops create lines of buttons for each element within the promoter or ahl group.
+    #They allow for promoter and ahl group selection.
     for i, promoter in enumerate(promoter_groups):
         tk.Button(frame, text=f"Select Promoter: {promoter}",
                   command=lambda p=promoter: select_group(promoter_groups[p])
@@ -429,44 +469,81 @@ def select_and_plot_wells():
         ).grid(row=row_offset+i, column=columns//2, columnspan=columns//2, sticky="w")
 
     # --- Individual wells ---
+    # As the above header would imply for the handling, we create buttons for each and every well present with meaningful data in well_history.
+    #row_index firmly places these east of the grouping buttons handled above.
     row_index = 6 + len(promoter_groups)
+    #2D button array.
     for r_i, r in enumerate(row_labels):
         for c in range(1, columns+1):
+            #Well labels based on row and column
             well = f"{r}{c}"
+            #If current well history exists, obtain the data. Otherwise return NoneType.
             history = well_history.get(well, None)
+            #Check specificall if od and rfu are non-zero.
             if history and (any(v != 0 for v in history["od"]) or any(v != 0 for v in history["rfu"])):
+                #If the current well does have that data, then add it as a button to the grid, labelled with
+                #"A1,B2,etc. (Promoter | rfu)"
                 var = tk.BooleanVar()
                 well_vars[well] = var
                 cb = tk.Checkbutton(frame, text=f"{well} ({history['promoter']} | {history['ahl']})", variable=var)
                 cb.grid(row=row_index+r_i, column=c-1, padx=3, pady=3)
 
     def go_to_graph_type():
-        well_popup.destroy()
-        selected_wells = [w for w, var in well_vars.items() if var.get()]
+        """
+        Desc: Final function of Step 1. Creates an actionable list of wells to be graphed when appropriate wells have been selected.
+
+        Pre: No parameters. Needs access to well_popup as well as well_vars. This is also something that could be handled through passing variables.
+
+        Post: Destroys the well_popup window. Moves to graph_type_popup.
+        """  
+        well_popup.destroy() #When this function is called we no longer need to pick out wells.
+        selected_wells = [w for w, var in well_vars.items() if var.get()] #Make a list of all of the wells selected.
         if not selected_wells:
+            #Error handling. Make sure user actually picks wells.
             messagebox.showwarning("No wells selected", "Please select at least one well.")
             return
-        graph_type_popup(selected_wells)
+        graph_type_popup(selected_wells) #Start doing graphs.
 
+    #"Next" button calls the above go_to_graph_type function.
     tk.Button(frame, text="Next", command=go_to_graph_type).grid(row=rows+3, column=0, columnspan=columns, pady=10)
 
     # --- Step 2: Graph type selection popup ---
     def graph_type_popup(selected_wells):
-        popup = tk.Toplevel(window)
-        popup.title("Select Graph Type")
+        """
+        Desc: Entirely handles a window which prompts the user for graphing options. Standard and Clustered are the options, these could be explained
+        more technically (i.e. what kind of graph are they?) Perhaps some descriptive "What is this" popups.
 
+        Pre: All selected wells are passed here for graph handling.
+
+        Post: Graph handling is done by plot_standard and cluster_options_popup calls, which do different types of graphing.
+        """ 
+        popup = tk.Toplevel(window)
+        #Top-level window prompting user to select a graphing procedure.
+        popup.title("Select Graph Type")
+        
+        #Same within window as a header
         tk.Label(popup, text="Select graph type:").pack(pady=5)
+        #A variable set by the buttons below. Defaults to all so that go_next will display standard graphing by default.
         graph_type_var = tk.StringVar(value="all")
+        #Buttons assign different values to the StringVar to encode a graph selection. Handled by if-else in go_next
         tk.Radiobutton(popup, text="Standard Graph", variable=graph_type_var, value="all").pack(anchor="w", padx=10)
         tk.Radiobutton(popup, text="Clustered Graph", variable=graph_type_var, value="clustered").pack(anchor="w", padx=10)
 
         def go_next():
+            """
+            Desc: Function within graph_type_popup to handle "stalled looping" allowing for graphs to be displayed, iterated with the "Next" button being hit.
+
+            Pre: Accesses the StringVar graph_type_var for checking which graph to display.
+
+            Post: Actually calls plot_standard and cluster_options_popup.
+            """ 
             popup.destroy()
             if graph_type_var.get() == "all":
                 plot_standard(selected_wells)
             else:
                 cluster_options_popup(selected_wells)
 
+        #Next button to flip through graphs.
         tk.Button(popup, text="Next", command=go_next).pack(pady=10)
 
     # --- Step 3: Cluster options popup ---
