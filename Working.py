@@ -763,14 +763,21 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
     # OD clustering
     # It should also be noted that nearly all of the functions from cluster_plate are utilized in these sections.
     if signals_selected.get("OD", False):
+        # X_od, labels_od are enumerated returns for the vector features and well labels built by build_feature_matrix.
         X_od, labels_od = cp.build_feature_matrix(well_history,"od",features_selected,selected_wells,include_promoter,include_ahl)
+        # od_cluster_ids using the clustering_mode specified, builds a list of cluster features and returns a numpy array reference to each
         od_cluster_ids = cp.cluster_signal(X_od, clustering_mode, n_clusters, dbscan_eps)
+        # od_clusters is a dict allowing for labels_od references to return cluster ids. We iterate through this for the next steps.
         od_clusters = cp.build_cluster_map(labels_od, od_cluster_ids)
         for cid, wells in od_clusters.items():
+            # First collect time series from the numpy array, stored in mean_od
             mean_od = np.array([well_history[w]["od"] for w in wells], dtype=object)
+            # Then get the mean od value, now stored in mean_od
             mean_od = np.mean([np.pad(v, (0, max_rounds - len(v)), 'constant', constant_values=np.nan) for v in mean_od], axis=0)
+            # line is used to store the plotting data drawn from the clustering data collected.
             line = ax_od.plot(rounds, mean_od, color=colors[cid % len(colors)],
                               linestyle="-", linewidth=2, label=f"Cluster {cid} OD (n={len(wells)})")
+            # Make a legend for each signal. Formatted in the style "Cluster {cluster Id} OD (n={number of clusters})
             legend_items.append((line[0], f"Cluster {cid} OD (n={len(wells)})"))
 
     # RFU clustering. Copied in structure from OD clustering. We could make this an embedded function called with OD or RFU as a parameter.
@@ -791,12 +798,13 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
     ax_rfu.set_ylabel("RFU")
     ax_od.set_title("Clustered Mean OD and RFU Curves")
 
-    # Display plot in its window
+    # Embed the resultant plot in GUI with FigureCanvasTkAgg, draw it and return it to the window
     canvas_plot = FigureCanvasTkAgg(fig, master=plot_window)
     canvas_plot.draw()
     canvas_plot.get_tk_widget().pack(fill="both", expand=True)
 
     # --- Create separate legend window ---
+    # legend_window: popup window with name "Legend"
     legend_window = tk.Toplevel()
     legend_window.title("Legend")
     fig_legend, ax_legend = plt.subplots(figsize=(6, max(4, len(legend_items)*0.35)))
@@ -807,10 +815,12 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
              for l, _ in legend_items]
     labels = [label for _, label in legend_items]
 
+    # ncols and next lines center everything based on how many labels are needed
     ncols = max(1, len(labels)//15)
     ax_legend.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
     ax_legend.set_title("Legend")
 
+    # Embed the legend in GUI with FigureCanvasTkAgg, draw it and return it to the window
     canvas_legend = FigureCanvasTkAgg(fig_legend, master=legend_window)
     canvas_legend.draw()
     canvas_legend.get_tk_widget().pack(fill="both", expand=True)
