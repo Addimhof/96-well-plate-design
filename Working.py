@@ -710,29 +710,31 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
 
     Pre: For a list of all of the parameters passed to the function, look below in its own section for a description of each.
 
-    Post: 
+    Post: Creates a configurable tkinter window that houses a matplotlib canvas_plot displaying the cluster map built by this function.
 
     Parameters (Included since there's quite a few):
-        -selected_wells:
+        -selected_wells: Iterable of well identifiers. Specified during go_to_graph_type().
         
-        -features_selected:
+        -features_selected: User chooses these during plot_clusters().
 
-        -signals_selected:
+        -signals_selected: An iterable of every OD and RFU data point.
 
-        -include_promoter:
+        -include_promoter: tk Boolval to include promoter mutants as a clustering factor
 
-        -include_ahl:
+        -include_ahl: tk Boolval to include AHL levels as a clustering factor
 
-        -clustering_mode:
+        -clustering_mode: Clustering algorithm selector ("kmeans", "auto", etc.). kmeans partions observations into a set number of clusters
+        specified by n_clusters.
 
-        -n_clusters:
+        -n_clusters: Number of clusters for k-means (if applicable). Specified by user in plot_clusters().
 
-        -dbscan_eps:
+        -dbscan_eps: Maximum distance during DBSCAN algorithim that points can be from each other while still being neighbors.
     """
+    #cluster plate functions are used specifically for this function.
     import cluster_plate as cp
     from matplotlib.lines import Line2D
 
-    # Ensure all OD/RFU are lists
+    # Ensure all OD/RFU are lists of floating point or string values.
     for w in selected_wells:
         if isinstance(well_history[w]["od"], (float, str)):
             well_history[w]["od"] = [float(well_history[w]["od"])]
