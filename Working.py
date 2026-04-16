@@ -251,112 +251,234 @@ def button_pressed(row, col):
             button = buttons[(row, col)]
             button.config(relief="sunken", bg="dark grey")
 
-for r in range(rows):
-    for c in range(columns):
-        button_states [(r, c)] = False
-        well_name = f"{row_labels[r]}{c+1}"
+for r in range(rows):  # r: current row index (0 → rows-1)
+    for c in range(columns):  # c: current column index (0 → columns-1)
+
+        button_states[(r, c)] = False  # Tracks whether a well button is "active"/pressed
+
+        well_name = f"{row_labels[r]}{c+1}"  # Assigns well ID (e.g., A1, B3, etc.)
 
         button = tk.Button(window,
-                           text=well_name,
-                           width=6, height=2,
-                           bg="lightgrey",
-                           command=lambda r=r, c=c: button_pressed(r, c,)
+                           text=well_name,  # Label displayed on button
+                           width=6, height=2,  # Button size in characters
+                           bg="lightgrey",  # Default background color
+                           command=lambda r=r, c=c: button_pressed(r, c,)  # Left click handler (preserves r,c)
         )
-        button.grid(row=r, column=c, padx=2, pady=2)
-        buttons[(r, c)] = button
 
+        button.grid(row=r, column=c, padx=2, pady=2)  # Places button in grid layout
+
+        buttons[(r, c)] = button  # Stores button reference for later access
+
+        # Hover event which triggers display update
         button.bind("<Enter>", lambda e, w=well_name: on_hover(w))
+
+        # Click event which triggers BOTH button press logic and data entry popup
         button.bind("<Button-1>", lambda e, r=r, c=c, w=well_name: (
             button_pressed(r, c),
             open_data_entry(w)
         ))
 
+
 def save_plate_to_csv():
+    """
+    Desc: Saves the current plate state into a CSV file AND appends OD/RFU values to the well_history.
+
+    Pre: 
+    - well_data must be populated with current well values.
+    - round_number must be initialized.
+    - columns, rows, and row_labels must be defined.
+
+    Post:
+    - A timestamped CSV file is created.
+    - well_history is updated with the new OD/RFU values for each well.
+    """
+
     global round_number, well_history
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"plate_data_round_{round_number}_{timestamp}.csv"
-    for well, data in well_data.items():
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")  # Unique timestamp for file naming
+    filename = f"plate_data_round_{round_number}_{timestamp}.csv"  # Output the CSV filename
+
+    for well, data in well_data.items():  # Iterate through all wells
+
+        # Initialize history entry if it doesn't exist
         if well not in well_history:
             well_history[well] = {
-                "promoter": data.get("promoter", ""),
-                "ahl": data.get("ahl", ""),
-                "od": [],
-                "rfu": []
+                "promoter": data.get("promoter", ""),  # Promoter
+                "ahl": data.get("ahl", ""),  # AHL concentration
+                "od": [],  # OD history list
+                "rfu": []  # RFU history list
             }
+
+        # Convert OD safely to float
         try:
-            od_value = float(data["od"]) if data ["od"] else 0
+            od_value = float(data["od"]) if data["od"] else 0
         except ValueError:
             od_value = 0
-        well_history[well]["od"].append(od_value)
+
+        well_history[well]["od"].append(od_value)  # Append OD value to history
+
+        # Convert RFU safely to a float
         try:
-            rfu_value = float(data["rfu"]) if data ["rfu"] else 0
+            rfu_value = float(data["rfu"]) if data["rfu"] else 0
         except ValueError:
             rfu_value = 0
-        well_history[well]["rfu"].append(rfu_value)
-   
+
+        well_history[well]["rfu"].append(rfu_value)  # Append RFU value to history
+
+    # Writing the CSV file
     with open(filename, "w", newline="") as f:
         writer = csv.writer(f)
-        header = [str(i+1) for i in range(columns)]
-        writer.writerow([""]+header)
+
+        header = [str(i+1) for i in range(columns)]  # Column labels (1–12)
+        writer.writerow([""] + header)  # First row (empty corner + column numbers)
+
         for r in range(rows):
-            row_label=row_labels[r]
-            row_values = []
+            row_label = row_labels[r]  # Row label (A–H)
+            row_values = []  # Stores all the cell values for this row
+
             for c in range(columns):
-                well_name = f"{row_label}{c+1}"
-                data = well_data.get(well_name, {})
+                well_name = f"{row_label}{c+1}"  # Construct well ID
+                data = well_data.get(well_name, {})  # Fetch well data (default empty dict)
+
+                # Format cell as "promoter|ahl|od|rfu"
                 value = f"{data.get('promoter','')}|{data.get('ahl','')}|{data.get('od','')}|{data.get('rfu','')}"
                 row_values.append(value)
-            writer.writerow([row_label] + row_values)
-save_button = tk.Button(window, text= "Save Curretn Data", command=save_plate_to_csv)
+
+            writer.writerow([row_label] + row_values)  # Write row to CSV
+
+
+# Save button UI
+save_button = tk.Button(window, text="Save Curretn Data", command=save_plate_to_csv)
 save_button.grid(row=rows+2, column=0, columnspan=12, pady=5)
 
+
 def start_round():
+    """
+    Desc: Saves current round data, clears OD/RFU values, and increments round number.
+
+    Pre:
+    - well_data must exist and contain wells.
+    - save_plate_to_csv must be functional.
+
+    Post:
+    - Current data is saved to CSV.
+    - OD and RFU values are reset for all wells.
+    - round_number increments by 1.
+    - User is notified with a popup.
+    """
+
     global round_number, well_data
-    save_plate_to_csv()
-    
+
+    save_plate_to_csv()  # Save current round before clearing
+
+    # Reset OD and RFU values for next round
     for w in well_data:
-        well_data[w]["od"] = ""
-        well_data[w]["rfu"] = ""
-   
-    round_number += 1
+        well_data[w]["od"] = ""  # Clear OD
+        well_data[w]["rfu"] = ""  # Clear RFU
+
+    round_number += 1  # Move to next round
+
     messagebox.showinfo("New Round", f"Round {round_number} started. Enter new values.")
 
+
+# Round button UI
 round_button = tk.Button(window, text="Start New Round", command=start_round)
 round_button.grid(row=rows+2, column=0, columnspan=12, pady=5)
 
+
 def update_timer():
+    """
+    Desc: Updates a running timer every second and displays it in the UI.
+
+    Pre:
+    - window must exist.
+    - seconds_passed must be initialized globally.
+    - timer_label must be a valid Tkinter label.
+
+    Post:
+    - seconds_passed increments by 1 every second.
+    - timer_label text updates continuously.
+    """
+
     global seconds_passed
-    if not window.winfo_exists():  # window is destroyed
+
+    if not window.winfo_exists():  # Prevent updates if window is closed
         return
-    seconds_passed += 1
-    timer_label.config(text=f"Timer: {seconds_passed} seconds")
-    window.after(1000, update_timer)
+
+    seconds_passed += 1  # Increment timer
+
+    timer_label.config(text=f"Timer: {seconds_passed} seconds")  # Update label
+
+    window.after(1000, update_timer)  # Schedule next update (1 second)
+
 
 def plot_well_history():
+    """
+    Desc: Generates plots of OD and RFU values over rounds for each well with valid data.
+
+    Pre:
+    - well_history must be populated with OD and RFU lists.
+
+    Post:
+    - A matplotlib plot is displayed for each well containing non-zero data.
+    """
+
     for well, history in well_history.items():
-        if not(any(v != 0 for v in history["od"]) or any(v !=0 for v in history["rfu"])):
+
+        # Skip wells with no meaningful data
+        if not (any(v != 0 for v in history["od"]) or any(v != 0 for v in history["rfu"])):
             continue
-        rounds= list(range(1, len(history["od"]) + 1))
+
+        rounds = list(range(1, len(history["od"]) + 1))  # X-axis values (round numbers)
 
         plt.figure(figsize=(6,4))
-        plt.plot(rounds, history["od"], marker= 'o', label="od")
-        plt.plot(rounds, history["rfu"], marker='x', label='rfu')
+
+        plt.plot(rounds, history["od"], marker='o', label="od")  # OD curve
+        plt.plot(rounds, history["rfu"], marker='x', label='rfu')  # RFU curve
+
         plt.title(f"Well {well} ({history['promoter']} | {history['ahl']})")
         plt.xlabel("Round")
         plt.ylabel("Value")
         plt.legend()
-        plt.show()
+
+        plt.show()  # Display plot
+
 
 def trim_empties(values):
+    """
+    Desc: Removes trailing empty or None values from a list.
+
+    Pre:
+    - values must be a list.
+
+    Post:
+    - List is modified in-place with trailing empty elements removed.
+    - Returns the cleaned list.
+    """
+
     while values and (values[-1] == "" or values[-1] is None):
-        values.pop()
-    return values
+        values.pop()  # Remove last element if empty
+
+    return values  # Return cleaned list
 
 def group_wells_by(field):
+    """
+    Desc: Constructs a reverse-lookup map (dict) that ties well names to the qualitative variables stored for each well, 
+    used with AHL and Promoters.
+
+    Pre: Takes a string-based key to select values to pull from well_history. Currently only used with "ahl" and "promoter" qualitative vars.
+
+    Post: Returns the reverse-lookup map as a dict.
+    """
+    #groups: reverse-lookup map in question.  
     groups = {}
+    #Iterates through all wells in well_history, enumerated with the data values associated with well name keys
     for well, data in well_history.items():
+        #Get the qualitative var.
         key = data.get(field)
+        #Filter out null variables.
         if key:
+            #If the qualitative variable is unique, create a new list for it, otherwise append the well reference to the key in the hash map.
             if key not in groups:
                 groups[key] = []
             groups[key].append(well)
@@ -402,7 +524,7 @@ def select_and_plot_wells():
     tk.Label(frame, text="Select wells to plot").grid(row=0, column=0, columnspan=columns, pady=5)
 
     well_vars = {} # Based on usage in functions well_vars acts as a boolean selection/filtering tool for picking elements promoter_groups and ahl_groups
-    # Both promoter_groups and ahl_groups are lists of well data added to a group if their promoter or ahl data exists. Ethan should annotate the function called.
+    # Both promoter_groups and ahl_groups are lists of well data added to a group if their promoter or ahl data exists.
     promoter_groups = group_wells_by("promoter")  
     ahl_groups = group_wells_by("ahl")
 
