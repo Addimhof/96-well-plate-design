@@ -291,61 +291,128 @@ def group_wells_by(field):
             groups[key].append(well)
     return groups
 
-def plot_rfu_od_vs_ahl():
-    from collections import defaultdict
+def plot_rfu_od_vs_ahl(selected_wells):
+    from collections import defaultdict as dd
 
-    ahl_ratios = defaultdict(list)
+    promoter_data = dd(list)
 
-    for well, history in well_history.items():
+    for well in selected_wells:
+        history = well_history.get(well)
+        if not history:
+            continue
+
+        promoter = history.get("promoter", "").strip()
         ahl = history.get("ahl", "").strip()
-        if not ahl:
+
+        if not promoter or not ahl:
             continue
         try:
             ahl_float = float(ahl)
         except ValueError:
             continue
 
+        if ahl_float <= 0: 
+            continue
+
         od_vals = np.array(history["od"], dtype = float)
         rfu_vals = np.array(history["rfu"], dtype = float)
 
-        mean_od = np.mean(od_vals)
-        mean_rfu = np.mean(rfu_vals)
+        with np.errstate(divide = 'ignore', invalid = 'ignore'):
+            rfu_od_per_round = np.where(od_vals > 0, rfu_vals / od_vals, 0)
 
-        if mean_od > 0:
-            ahl_ratios[ahl_float].append(mean_rfu / mean_od)
+        rounds = np.arange(len(rfu_od_per_round))
+        auc = np.trapz(rfu_od_per_round, rounds)
 
-    if not ahl_ratios:
+        promoter_data[promoter].append((ahl_float, auc))
+
+        # mean_od = np.mean(od_vals)
+        # mean_rfu = np.mean(rfu_vals)
+
+        # if mean_od > 0:
+        #     promoter_data[promoter].append((ahl_float, mean_rfu / mean_od, well))
+
+    if not promoter_data:
         messagebox.showwarning("No Data", "No valid AHL/OD/RFU data found to plot.")
         return
 
-    sorted_ahls = sorted(ahl_ratios.keys())
+    promoters = sorted(promoter_data.keys())
+    colors = plt.cm.tab10.colors
 
-    means = [np.mean(ahl_ratios[a]) for a in sorted_ahls]
-    stds  = [np.std(ahl_ratios[a])  for a in sorted_ahls]
+    fig, ax = plt.subplots(figsize = (9, 5))
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    for idx, promoter in enumerate(promoters):
+        points = promoter_data[promoter]
+        if not points: 
+            continue
+    
+        ahl_vals = [p[0] for p in points]
+        auc_vals = [p[1] for p in points]
+        #well_names = [p[2] for p in points]
 
-    ax.errorbar(
-        sorted_ahls, means, yerr=stds,
-        fmt='o-',
-        color='steelblue',
-        ecolor='lightsteelblue',
-        elinewidth=1.5,
-        capsize=4,
-        linewidth=2,
-        markersize=7,
-        label="Mean RFU/OD ± SD"
-    )
+        color = colors[idx % len(colors)]
+        ahl_groups = dd(list)
+        for a, v in zip(ahl_vals, auc_vals):
+            ahl_groups[a].append(v)
+        
+        sorted_ahls = sorted(ahl_groups.keys())
+        median_aucs = [np.median(ahl_groups[a]) for a in sorted_ahls]
+
+
+        ax.scatter(
+            ahl_vals, auc_vals,
+            color = color,
+            alpha = 0.3,
+            s = 25,
+            label = f"{promoter} - individual wells"
+        )
+
+        # from collections import defaultdict as dd
+    
+        # for a in sorted_ahls:
+        #     vals = ahl_groups[a]
+        #     ax.plot([a, a], [min(vals), max(vals)],color = color, linewidth = 1, alpha = 0.4)
+
+            #median optional since the median line connects the median RFU/OD value at each AHL concentration
+        ax.plot(sorted_ahls, median_aucs, color = color, linewidth = 2, linestyle = '-', alpha = 0.7, label = f"{promoter} - median")
 
     ax.set_xscale("log")
     ax.set_xlabel("AHL Concentration (log scale)", fontsize = 12)
-    ax.set_ylabel("RFU / OD", fontsize = 12)
-    ax.set_title("Normalized Fluorescence (RFU/OD) vs AHL Concentration", fontsize = 13)
-    ax.legend(fontsize=10)
-    ax.grid(True, which = "both", linestyle = "--", alpha = 0.4)
+    ax.set_ylabel("AUC of RFU / OD (total protein expression)", fontsize = 12)
+    ax.set_title(f"AUC of RFU/OD vs AHL Concentration - {', '.join(promoters)}", fontsize = 13)
+    ax.legend(fontsize = 10)
+    ax.grid(True, which = "both", linestyle = '--', alpha = 0.4)
 
     plt.tight_layout()
     plt.show(block = True)
+
+    #The higher the AUC, the more total protein that well produced over the entire experiment — so the promoter with the highest line on this graph is your best candidate!
+
+    # means = [np.mean(ahl_ratios[a]) for a in sorted_ahls]
+    # stds  = [np.std(ahl_ratios[a])  for a in sorted_ahls]
+
+    # # fig, ax = plt.subplots(figsize=(8, 5))
+
+    # ax.errorbar(
+    #     sorted_ahls, means, yerr=stds,
+    #     fmt='o-',
+    #     color='steelblue',
+    #     ecolor='lightsteelblue',
+    #     elinewidth=1.5,
+    #     capsize=4,
+    #     linewidth=2,
+    #     markersize=7,
+    #     label="Mean RFU/OD ± SD"
+    # )
+
+    # ax.set_xscale("log")
+    # ax.set_xlabel("AHL Concentration (log scale)", fontsize = 12)
+    # ax.set_ylabel("RFU / OD", fontsize = 12)
+    # ax.set_title("Normalized Fluorescence (RFU/OD) vs AHL Concentration", fontsize = 13)
+    # ax.legend(fontsize=10)
+    # ax.grid(True, which = "both", linestyle = "--", alpha = 0.4)
+
+    # plt.tight_layout()
+    # plt.show(block = True)
 
 
 def select_and_plot_wells():
@@ -538,12 +605,12 @@ def select_and_plot_wells():
         ncols = max(1,len(labels)//15)
         legend_ax.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
         legend_ax.set_title("Legend")
-        legend_fig.show()
+        # legend_fig.show()
 
         plt.show(block = False)
 
         # RFU/OD vs AHL concentration 
-        plot_rfu_od_vs_ahl()
+        plot_rfu_od_vs_ahl(selected_wells)
 
 
 
@@ -551,7 +618,7 @@ def select_and_plot_wells():
 plot_selected_button = tk.Button(
     window,
     text="Plot Selected Wells",
-    command=select_and_plot_wells)
+    command = select_and_plot_wells)
 plot_selected_button.grid(row=rows+3, column=0, columnspan=12, pady=10)
 
 def plot_clusters_gui(selected_wells, features_selected, signals_selected,
@@ -631,6 +698,8 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
     canvas_legend = FigureCanvasTkAgg(fig_legend, master=legend_window)
     canvas_legend.draw()
     canvas_legend.get_tk_widget().pack(fill="both", expand=True)
+
+    plot_rfu_od_vs_ahl(selected_wells)
 
 update_timer()
 window.mainloop()
