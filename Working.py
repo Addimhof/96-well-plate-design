@@ -10,6 +10,7 @@ import numpy as np
 # Copy your working directory (where this file is) as text and paste it into the field. Pylance will complain otherwise.
 import cluster_plate as cp
 import os
+#Libraries^^
 
 DEV_MODE = True # Debug flag. Treat as constant. DO NOT change in any function.
 CSV_FOLDER = "plate_test_rounds_native" # Points to file for csv to do stuff with. Treat as constant. DO NOT change in any function.
@@ -228,6 +229,7 @@ def get_next_well(current_well):
         # If there's not an applicable value return none.
         return None
 
+#This shows the well being hovered over on the title line of the window
 def on_hover(well_name):
     """
     Desc: Very simple function. Changes the window title when called to reference a specific well button label.
@@ -238,6 +240,7 @@ def on_hover(well_name):
     """  
     window.title(f"Hovering over {well_name}")
 
+#Changes the look of the button so the user knows whats been pressed
 def button_pressed(row, col):
     """
     Desc: Also simple GUI handling. Assigns a True button_state and changes its appearance if clicked.
@@ -636,6 +639,9 @@ def select_and_plot_wells():
         tk.Radiobutton(popup, text="Standard Graph", variable=graph_type_var, value="all").pack(anchor="w", padx=10)
         tk.Radiobutton(popup, text="Clustered Graph", variable=graph_type_var, value="clustered").pack(anchor="w", padx=10)
 
+        show_legend_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(popup, text="Show Legend Window", variable=show_legend_var).pack(anchor="w", padx=10)
+        
         def go_next():
             """
             Desc: Function within graph_type_popup to handle "stalled looping" allowing for graphs to be displayed, iterated with the "Next" button being hit.
@@ -646,15 +652,15 @@ def select_and_plot_wells():
             """ 
             popup.destroy()
             if graph_type_var.get() == "all":
-                plot_standard(selected_wells)
+                plot_standard(selected_wells, show_legend_var.get())
             else:
-                cluster_options_popup(selected_wells)
+                cluster_options_popup(selected_wells, show_legend_var.get())
 
         # Next button to flip through graphs.
         tk.Button(popup, text="Next", command=go_next).pack(pady=10)
 
     # --- Step 3: Cluster options popup ---
-    def cluster_options_popup(selected_wells):
+    def cluster_options_popup(selected_wells, show_legend):
         """
         Desc: Handles the entirety of a window which allows the user to select groups of wells to cluster on graphs, based on their individual variables.
         The user may also select groups based on graphical features of interest. When the window is terminated everything is passed to plot_clusters_gui().
@@ -746,14 +752,15 @@ def select_and_plot_wells():
                 include_promoter=include_promoter_var.get(),
                 include_ahl=include_ahl_var.get(),
                 clustering_mode="kmeans" if n_clusters else "auto",
-                n_clusters=n_clusters if n_clusters else 4
+                n_clusters=n_clusters if n_clusters else 4,
+                show_legend=show_legend
             )
 
         # Plot button to begin plotting via plot_clusters
         tk.Button(popup, text="Plot", command=plot_clusters).pack(pady=10)
 
     # --- Step 4: Standard plotting function (NEW) ---
-    def plot_standard(selected_wells):
+    def plot_standard(selected_wells, show_legend=True):
         """
         Desc: This function is called by graph_type_popup when the user calls for a standard graph, represented by tk StringVar value "all" when a graphing
         method is chosen by the program. selected_wells is iterated through for to construct lines for each included well via matplotlib's functions 
@@ -802,17 +809,18 @@ def select_and_plot_wells():
         fig.show()
 
         # --- Separate legend window ---
-        # legend_fig is the constructed window for figures.
-        legend_fig = plt.figure("Legend Window", figsize=(6, max(4,len(labels)*0.35)))
-        # legend_ax is created to allow us to render things.
-        legend_ax = legend_fig.add_subplot(111)
-        legend_ax.axis("off")
-        # ncols is scaled to the number of lines present. 
-        ncols = max(1,len(labels)//15)
-        # legend_ax is actually made into a proper legend here. It pulls the lines list, the labels list, centers everything based on ncols, and adds a border.
-        legend_ax.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
-        legend_ax.set_title("Legend")
-        legend_fig.show()
+       if show_legend:
+          # legend_fig is the constructed window for figures.
+          legend_fig = plt.figure("Legend Window", figsize=(6, max(4,len(labels)*0.35)))
+          # legend_ax is created to allow us to render things.
+          legend_ax = legend_fig.add_subplot(111)
+          legend_ax.axis("off")
+          # ncols is scaled to the number of lines present. 
+          ncols = max(1,len(labels)//15)
+          # legend_ax is actually made into a proper legend here. It pulls the lines list, the labels list, centers everything based on ncols, and adds a border.
+          legend_ax.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
+          legend_ax.set_title("Legend")
+          legend_fig.show()
 
 
 
@@ -826,7 +834,7 @@ plot_selected_button.grid(row=rows+3, column=0, columnspan=12, pady=10)
 
 def plot_clusters_gui(selected_wells, features_selected, signals_selected,
                       include_promoter=False, include_ahl=False,
-                      clustering_mode="kmeans", n_clusters=4, dbscan_eps=0.5):
+                      clustering_mode="kmeans", n_clusters=4, dbscan_eps=0.5, show_legend=True):
     """
     Desc:  
 
@@ -926,26 +934,27 @@ def plot_clusters_gui(selected_wells, features_selected, signals_selected,
     canvas_plot.get_tk_widget().pack(fill="both", expand=True)
 
     # --- Create separate legend window ---
-    # legend_window: popup window with name "Legend"
-    legend_window = tk.Toplevel()
-    legend_window.title("Legend")
-    fig_legend, ax_legend = plt.subplots(figsize=(6, max(4, len(legend_items)*0.35)))
-    ax_legend.axis("off")
+    if show_legend:
+      # legend_window: popup window with name "Legend"
+      legend_window = tk.Toplevel()
+      legend_window.title("Legend")
+      fig_legend, ax_legend = plt.subplots(figsize=(6, max(4, len(legend_items)*0.35)))
+      ax_legend.axis("off")
 
-    # Create dummy lines for legend
-    lines = [Line2D([0], [0], color=l.get_color(), linestyle=l.get_linestyle(), linewidth=l.get_linewidth())
-             for l, _ in legend_items]
-    labels = [label for _, label in legend_items]
+      # Create dummy lines for legend
+      lines = [Line2D([0], [0], color=l.get_color(), linestyle=l.get_linestyle(), linewidth=l.get_linewidth())
+               for l, _ in legend_items]
+      labels = [label for _, label in legend_items]
 
-    # ncols and next lines center everything based on how many labels are needed
-    ncols = max(1, len(labels)//15)
-    ax_legend.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
-    ax_legend.set_title("Legend")
+      # ncols and next lines center everything based on how many labels are needed
+      ncols = max(1, len(labels)//15)
+      ax_legend.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
+      ax_legend.set_title("Legend")
 
-    # Embed the legend in GUI with FigureCanvasTkAgg, draw it and return it to the window
-    canvas_legend = FigureCanvasTkAgg(fig_legend, master=legend_window)
-    canvas_legend.draw()
-    canvas_legend.get_tk_widget().pack(fill="both", expand=True)
+      # Embed the legend in GUI with FigureCanvasTkAgg, draw it and return it to the window
+      canvas_legend = FigureCanvasTkAgg(fig_legend, master=legend_window)
+      canvas_legend.draw()
+      canvas_legend.get_tk_widget().pack(fill="both", expand=True)
 
 #Update the program timer for each program execution/tick.
 #Potentially may be useful to include delta-time implementation for update_timer()
