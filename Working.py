@@ -200,10 +200,6 @@ def get_next_well(current_well):
         index = all_wells.index(current_well)
         return all_wells[index + 1] if index + 1 < len(all_wells) else None
         # If there's a well following, return the index of the next well. Or else return None.
-        if index + 1 < len(all_wells):
-            return all_wells[index+1]
-        else:
-            return None
     except ValueError:
         # If there's not an applicable value return none.
         return None
@@ -414,6 +410,52 @@ analysis_inner.add(standard_options_tab, text="  Standard Graph  ")
 cluster_options_tab = ttk.Frame(analysis_inner)
 analysis_inner.add(cluster_options_tab, text="  Cluster Options  ")
 
+# CHANGED: Created the variables immediately before building the UI widgets to prevent scoping NameErrors
+# Instantiating the state variables directly inline before the sub-tab configuration layout items
+std_show_od = tk.BooleanVar(value=True)          # Local indicator for rendering standard OD series lines
+std_show_rfu = tk.BooleanVar(value=True)         # Local indicator for rendering standard RFU series lines
+std_group_by_condition = tk.BooleanVar(value=False) # Local indicator for averaging well groups by metadata
+
+# CHANGED: Added interactive configuration elements directly inside the "Standard Graph" tab
+# Set up interactive buttons and layout directly inside the standard graph options tab
+tk.Label(standard_options_tab, text="Standard Graph Settings", font=("Courier", 12, "bold")).pack(pady=(8, 4))
+tk.Checkbutton(standard_options_tab, text="Show OD Data", variable=std_show_od).pack(anchor="w", padx=20, pady=2) # Toggle line visibility for Optical Density
+tk.Checkbutton(standard_options_tab, text="Show RFU Data", variable=std_show_rfu).pack(anchor="w", padx=20, pady=2) # Toggle line visibility for Relative Fluorescence Units
+tk.Checkbutton(standard_options_tab, text="Group by Condition (Mean ± SD)", variable=std_group_by_condition).pack(anchor="w", padx=20, pady=2) # Combine identical experimental environments
+
+# CHANGED: Declared the shared clustering configurations and placed elements directly inside the "Cluster Options" tab
+# Set up interactive variables and container frames inside the cluster options tab
+show_legend_var = tk.BooleanVar(value=True) # Checkbutton state for popping up an isolated legend window
+cluster_od_var = tk.BooleanVar(value=True) # Checkbutton state to run calculation matrices on OD data
+cluster_rfu_var = tk.BooleanVar(value=True) # Checkbutton state to run calculation matrices on RFU data
+include_promoter_var = tk.BooleanVar(value=False) # Checkbutton state to index promoter types in algorithm matrix
+include_ahl_var = tk.BooleanVar(value=False) # Checkbutton state to index chemical concentration in algorithm matrix
+cluster_mode_var = tk.StringVar(value="auto") # Radiobutton selection for automatic vs fixed quantity clustering groups
+
+tk.Label(cluster_options_tab, text="Cluster Analysis Settings", font=("Courier", 12, "bold")).pack(pady=(8, 4))
+tk.Checkbutton(cluster_options_tab, text="Cluster on OD measurements", variable=cluster_od_var).pack(anchor="w", padx=20, pady=2)
+tk.Checkbutton(cluster_options_tab, text="Cluster on RFU measurements", variable=cluster_rfu_var).pack(anchor="w", padx=20, pady=2)
+tk.Checkbutton(cluster_options_tab, text="Include Promoter Data", variable=include_promoter_var).pack(anchor="w", padx=20, pady=2)
+tk.Checkbutton(cluster_options_tab, text="Include AHL Concentration", variable=include_ahl_var).pack(anchor="w", padx=20, pady=2)
+tk.Checkbutton(cluster_options_tab, text="Separate Window Legend", variable=show_legend_var).pack(anchor="w", padx=20, pady=2)
+
+cluster_feat_frame = tk.LabelFrame(cluster_options_tab, text="Signal Features to Cluster") # Group box component for layout spacing
+cluster_feat_frame.pack(fill="x", padx=20, pady=5)
+cluster_feature_vars = {} # Dictionary mapping for feature mathematical tracking keys
+for feat in ["total", "peak", "ending"]:
+    var = tk.BooleanVar(value=True)
+    cluster_feature_vars[feat] = var
+    tk.Checkbutton(cluster_feat_frame, text=feat.capitalize(), variable=var).pack(anchor="w", padx=10) # Construct check buttons dynamically for geometric calculations
+
+mode_frame = tk.LabelFrame(cluster_options_tab, text="Clustering Mode") # Group box component for user options boundary layout
+mode_frame.pack(fill="x", padx=20, pady=5)
+tk.Radiobutton(mode_frame, text="Automatic Clustering", variable=cluster_mode_var, value="auto").pack(anchor="w", padx=10)
+tk.Radiobutton(mode_frame, text="Specify Number of Clusters", variable=cluster_mode_var, value="manual").pack(anchor="w", padx=10)
+num_clusters_entry = tk.Entry(mode_frame, width=5) # Data entry field to specify k-means clusters manually
+num_clusters_entry.insert(0, "4") # Initialize layout input box with an integer fallback
+num_clusters_entry.pack(anchor="w", padx=30, pady=(0, 4))
+
+
 # ── Well Selection sub-tab ──────────────────
 
 tk.Label(well_select_tab, text="Select Wells to Plot",
@@ -557,6 +599,12 @@ def refresh_well_selector():
     # Individual well checkboxes
     tk.Label(ws_frame, text="─" * 60).grid(row=5, column=0, columnspan=12, pady=4)
     well_vars.clear()
+    # CHANGED: Placed the global variables directly above the checkbox loop so they compile first
+    # Initialize Boolean flags for the standard graph rendering configurations globally to prevent compilation errors
+    global std_show_od, std_show_rfu, std_group_by_condition
+    std_show_od = tk.BooleanVar(value=True)          # Global indicator for rendering standard OD series lines
+    std_show_rfu = tk.BooleanVar(value=True)         # Global indicator for rendering standard RFU series lines
+    std_group_by_condition = tk.BooleanVar(value=False) # Global indicator for averaging well groups by metadata
     for r_i, r in enumerate(row_labels):
         for c in range(1, columns + 1):
             well = f"{r}{c}"
@@ -599,148 +647,206 @@ def select_and_plot_wells():
         messagebox.showwarning("No wells selected", "Please select at least one well.")
         return
 
-    # --- Step 2: Graph type selection popup ---
-    def graph_type_popup(selected_wells):
+    # --- Step 4: Standard plotting function (NEW) ---
+    def plot_standard(selected_wells, show_legend=True):
         """
-        Desc: Entirely handles a window which prompts the user for graphing options. Standard and Clustered are the options, these could be explained
-        more technically (i.e. what kind of graph are they?) Perhaps some descriptive "What is this" popups.
+        Desc: This function is called by graph_type_popup when the user calls for a standard graph, represented by tk StringVar value "all" when a graphing
+        method is chosen by the program. selected_wells is iterated through for to construct lines for each included well via matplotlib's functions 
+        and the resulting graph, alongside a legend for each of the lines, is displayed in a GUI to the user. 
 
-        Pre: All selected wells are passed here for graph handling.
+        Pre: A dictionary called selected_wells must be passed to this function. It is the dataset we do plt operations on.
 
-        Post: Graph handling is done by plot_standard and cluster_options_popup calls, which do different types of graphing.
-        """ 
-        #Top-level window prompting user to select a graphing procedure.
-        popup = tk.Toplevel(window)
-        popup.title("Select Graph Type")
+        Post: show() calls are made to display the data with a GUI.
+        """
+        # FIXED: Added explicit global markers here so the local scope safely resolves the Tkinter control flags
+        global std_show_od, std_show_rfu, std_group_by_condition
+
+        show_od = std_show_od.get()
+        show_rfu = std_show_rfu.get()
+        group_by_condition = std_group_by_condition.get()
+
+        max_rounds = max(len(well_history[w]["od"]) for w in selected_wells)
+        rounds = list(range(1, max_rounds + 1))
+        colors = plt.cm.tab10.colors
+
+        graph_win = tk.Toplevel(window)
+        graph_win.title("Graph Results")
+        graph_win.geometry("1050x720")
+        graph_win.lift()
+        graph_win.attributes("-topmost", True)
+        graph_win.after(800, lambda: graph_win.attributes("-topmost", False))
+
+        notebook = ttk.Notebook(graph_win)
+        notebook.pack(fill="both", expand=True)
+
+        # ── Tab: Standard Graph ─────────────────
+        std_tab = ttk.Frame(notebook)
+        notebook.add(std_tab, text="  Standard Graph  ")
+
+        fig_std, ax1 = plt.subplots(figsize=(9, 5))
+        ax2 = ax1.twinx()
+
+        if group_by_condition:
+            # Group wells that share the same (promoter, AHL) pair and average them
+            groups = {}
+            for well in selected_wells:
+                h = well_history[well]
+                key = (h["promoter"], h["ahl"])
+                groups.setdefault(key, []).append(well)
+
+            for i, ((promoter, ahl), wells_in_group) in enumerate(groups.items()):
+                lbl = f"{promoter} | AHL={ahl} (n={len(wells_in_group)})"
+                color = colors[i % len(colors)]
+
+                if show_od:
+                    padded_od = [
+                        np.pad(well_history[w]["od"],
+                               (0, max_rounds - len(well_history[w]["od"])),
+                               constant_values=np.nan)
+                        for w in wells_in_group
+                    ]
+                    mean_od = np.nanmean(padded_od, axis=0)
+                    std_od  = np.nanstd(padded_od, axis=0)
+                    ax1.plot(rounds, mean_od, marker="o", linestyle="-",
+                             label=f"{lbl} OD", color=color)
+                    ax1.fill_between(rounds,
+                                     mean_od - std_od,
+                                     mean_od + std_od,
+                                     alpha=0.15, color=color)
+
+                if show_rfu:
+                    padded_rfu = [
+                        np.pad(well_history[w]["rfu"],
+                               (0, max_rounds - len(well_history[w]["rfu"])),
+                               constant_values=np.nan)
+                        for w in wells_in_group
+                    ]
+                    mean_rfu = np.nanmean(padded_rfu, axis=0)
+                    std_rfu  = np.nanstd(padded_rfu, axis=0)
+                    ax2.plot(rounds, mean_rfu, marker="x", linestyle="--",
+                             label=f"{lbl} RFU", color=color)
+                    ax2.fill_between(rounds,
+                                     mean_rfu - std_rfu,
+                                     mean_rfu + std_rfu,
+                                     alpha=0.10, color=color)
+
+            ax1.set_title("Grouped by Promoter + AHL — Mean ± SD")
+
+        else:
+            # Individual well lines
+            for i, well in enumerate(selected_wells):
+                history = well_history[well]
+                r_vals = list(range(1, len(history["od"]) + 1))
+                lbl = f"{history['promoter']} ({history['ahl']}) — {well}"
+                if show_od:
+                    ax1.plot(r_vals, history["od"], marker="o", linestyle="-",
+                             label=f"{lbl} OD", color=colors[i % len(colors)])
+                if show_rfu:
+                    ax2.plot(r_vals, history["rfu"], marker="x", linestyle="--",
+                             label=f"{lbl} RFU", color=colors[i % len(colors)])
+
+            ax1.set_title("Selected Wells — OD & RFU over Rounds")
+
+        ax1.set_xlabel("Round")
+        ax1.set_ylabel("OD")
+        ax2.set_ylabel("RFU")
+
+        # Combined legend
+        all_lines  = ax1.get_lines() + ax2.get_lines()
+        all_labels = [l.get_label() for l in all_lines]
+        fig_std.legend(all_lines, all_labels, loc="lower center",
+                       ncol=max(1, len(all_labels) // 6),
+                       fontsize=7, bbox_to_anchor=(0.5, -0.02))
+        fig_std.tight_layout(rect=[0, 0.08, 1, 1])
+
+        _embed_figure(std_tab, fig_std)
+
+        # ── Tab: OD over Rounds (per well) ─────
+        if show_od:
+            od_tab = ttk.Frame(notebook)
+            notebook.add(od_tab, text="  OD — All Wells  ")
+
+            fig_od, ax_od = plt.subplots(figsize=(9, 5))
+            for i, well in enumerate(selected_wells):
+                history = well_history[well]
+                r_vals = list(range(1, len(history["od"]) + 1))
+                ax_od.plot(r_vals, history["od"], marker="o",
+                           label=f"{well} ({history['promoter']})",
+                           color=colors[i % len(colors)])
+            ax_od.set_xlabel("Round")
+            ax_od.set_ylabel("OD")
+            ax_od.set_title("OD — All Selected Wells")
+            ax_od.legend(fontsize=7, ncol=max(1, len(selected_wells) // 10),
+                         bbox_to_anchor=(1, 1), loc="upper left")
+            fig_od.tight_layout()
+            _embed_figure(od_tab, fig_od)
+
+        # ── Tab: RFU over Rounds (per well) ────
+        if show_rfu:
+            rfu_tab = ttk.Frame(notebook)
+            notebook.add(rfu_tab, text="  RFU — All Wells  ")
+
+            fig_rfu, ax_rfu = plt.subplots(figsize=(9, 5))
+            for i, well in enumerate(selected_wells):
+                history = well_history[well]
+                r_vals = list(range(1, len(history["rfu"]) + 1))
+                ax_rfu.plot(r_vals, history["rfu"], marker="x", linestyle="--",
+                            label=f"{well} ({history['promoter']})",
+                            color=colors[i % len(colors)])
+            ax_rfu.set_xlabel("Round")
+            ax_rfu.set_ylabel("RFU")
+            ax_rfu.set_title("RFU — All Selected Wells")
+            ax_rfu.legend(fontsize=7, ncol=max(1, len(selected_wells) // 10),
+                          bbox_to_anchor=(1, 1), loc="upper left")
+            fig_rfu.tight_layout()
+            _embed_figure(rfu_tab, fig_rfu)
+
+# CHANGED: Moved the tab checking logic directly under the function definition so it targets plot_standard sequentially
+    # Check which sub-tab is currently active under the Analysis section to determine whether to run standard plotting or cluster operations
+    active_tab_index = analysis_inner.index(analysis_inner.select()) # Read active notebook frame integer position
+
+    if active_tab_index == 1:
+        # User has the 'Standard Graph' sub-tab active, run standard generation routine directly
+        plot_standard(selected_wells, show_legend=show_legend_var.get())
+    elif active_tab_index == 2:
+        # User has the 'Cluster Options' sub-tab active, prepare feature dicts and run cluster validation routine directly
         
-        # Same within window as a header
-        tk.Label(popup, text="Select graph type:").pack(pady=5)
-        # A variable set by the buttons below. Defaults to all so that go_next will display standard graphing by default.
-        graph_type_var = tk.StringVar(value="all")
-        # Buttons assign different values to the StringVar to encode a graph selection. Handled by if-else in go_next
-        tk.Radiobutton(popup, text="Standard Graph", variable=graph_type_var, value="all").pack(anchor="w", padx=10)
-        tk.Radiobutton(popup, text="Clustered Graph", variable=graph_type_var, value="clustered").pack(anchor="w", padx=10)
+        # Build active data metric flags from the sub-tab selection state variables
+        signals_selected = {"OD": cluster_od_var.get(), "RFU": cluster_rfu_var.get()}
+        if not any(signals_selected.values()):
+            messagebox.showwarning("No measurement selected", "Select at least OD or RFU in the options tab.")
+            return
 
-        show_legend_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(popup, text="Show Legend Window", variable=show_legend_var).pack(anchor="w", padx=10)
-        
-        def go_next():
-            """
-            Desc: Function within graph_type_popup to handle "stalled looping" allowing for graphs to be displayed, iterated with the "Next" button being hit.
+        # Collect checked computational signal metrics from tracking map objects
+        features_selected = [f for f, var in cluster_feature_vars.items() if var.get()]
+        if not features_selected:
+            messagebox.showwarning("No features selected", "Select at least one feature for clustering in the options tab.")
+            return
 
-            Pre: Accesses the StringVar graph_type_var for checking which graph to display.
-
-            Post: Actually calls plot_standard and cluster_options_popup.
-            """ 
-            popup.destroy()
-            if graph_type_var.get() == "all":
-                plot_standard(selected_wells, show_legend_var.get())
-            else:
-                cluster_options_popup(selected_wells, show_legend_var.get())
-
-        # Next button to flip through graphs.
-        tk.Button(popup, text="Next", command=go_next).pack(pady=10)
-
-    # --- Step 3: Cluster options popup ---
-    def cluster_options_popup(selected_wells, show_legend):
-        """
-        Desc: Handles the entirety of a window which allows the user to select groups of wells to cluster on graphs, based on their individual variables.
-        The user may also select groups based on graphical features of interest. When the window is terminated everything is passed to plot_clusters_gui().
-
-        Pre: selected_wells is passed to this function. It is not modified or used for mapping, but it is utilized when plot_clusters_gui() is called.
-
-        Post: Graphical features of interest are stored as variables, usually tk Bools and dictionaries that are all inevitably passed to plot_clusters_gui() as
-        parameters when this popup is closed.
-        """
-        # Top level window for selecting data clusters.
-        popup = tk.Toplevel(window)
-        popup.title("Cluster Options")
-
-        # Window header label
-        tk.Label(popup, text="Select measurement(s) to cluster:").pack(pady=5)
-
-        # Buttons tied to boolean values od_var and rfu_var enable clustering based on said conditions. These are by default true.
-        od_var = tk.BooleanVar(value=True)
-        rfu_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(popup, text="OD", variable=od_var).pack(anchor="w", padx=10)
-        tk.Checkbutton(popup, text="RFU", variable=rfu_var).pack(anchor="w", padx=10)
-
-        # Next section allows for selection of signal features.
-        tk.Label(popup, text="Select signal features:").pack(pady=5)
-        # Dictionary stores variables tied to features as keys, with true/false mapping for values. Allows for specific graphical features to be selected.
-        feature_vars = {}
-        for feat in ["total","peak","ending"]:
-            #Each feature gets its own button. These as vars are capitalized.
-            var = tk.BooleanVar(value=True)
-            feature_vars[feat] = var
-            tk.Checkbutton(popup, text=feat.capitalize(), variable=var).pack(anchor="w", padx=10)
-
-        # Create boolean buttons to include the categorical variables Promoter and AHL Concentration in clustering.
-        tk.Label(popup, text="Include categorical features:").pack(pady=5)
-        include_promoter_var = tk.BooleanVar(value=False)
-        include_ahl_var = tk.BooleanVar(value=False)
-
-        tk.Checkbutton(popup, text="Promoter", variable=include_promoter_var).pack(anchor="w", padx=10)
-        tk.Checkbutton(popup, text="AHL Concentration", variable=include_ahl_var).pack(anchor="w", padx=10)
-
-        # Allows user to either specify a number of clusters or automatically assign a number. This decision is handled through StringVar cluster_mode_var as an enum.
-        tk.Label(popup, text="Select clustering mode:").pack(pady=5)
-        cluster_mode_var = tk.StringVar(value="auto")
-        tk.Radiobutton(popup, text="Automatic Clustering", variable=cluster_mode_var, value="auto").pack(anchor="w", padx=10)
-        tk.Radiobutton(popup, text="Specify Number of Clusters", variable=cluster_mode_var, value="manual").pack(anchor="w", padx=10)
-
-        # For manual cluster, include an entry box for the number of clusters. Stored in num_clusters_entry
-        num_clusters_entry = tk.Entry(popup, width=5)
-        num_clusters_entry.pack(anchor="w", padx=20)
-
-        def plot_clusters():
-            """
-            Desc: This function does three things: Input validation to make sure the user has selected appropriate clusters, 
-            preparation of plot_clusters_gui params, then execution of plot_clusters_gui.
-
-            Pre: Relies pretty heavily on tkinter variables defined in cluster_options_popup for use with buttons. Able to use them within its scope.
-
-            Post: Calls plot_clusters_gui based on the params defined in this function.
-            """
-            # Validate that signals have been selected. If there are, pass the values as a dictionary called signals_selected.
-            signals_selected = {"OD": od_var.get(), "RFU": rfu_var.get()}
-            if not any(signals_selected.values()):
-                messagebox.showwarning("No measurement selected","Select at least OD or RFU.")
+        # Establish fixed target cluster integer parameters or run adaptive density estimations
+        n_clusters = None
+        if cluster_mode_var.get() == "manual":
+            try:
+                n_clusters = int(num_clusters_entry.get())
+                if n_clusters < 1: raise ValueError
+            except ValueError:
+                messagebox.showwarning("Invalid input", "Enter a valid number of clusters in the options tab.")
                 return
-            # Validate that features have been selected. If there are, pass the values as a dictionary called features_selected.
-            features_selected = [f for f,var in feature_vars.items() if var.get()]
-            if not features_selected:
-                messagebox.showwarning("No features selected","Select at least one feature for clustering.")
-                return
-            # When initialized the number of clusters (stored in n_clusters) is NoneType. Every value stored afterwards should be an integer.
-            n_clusters = None
-            # If the user selected manual for their number of clusters, we need to do some exception handling.
-            if cluster_mode_var.get()=="manual":
-                try:
-                    # If the number of clusters is 0, negative, or None, the user must re-enter a value.
-                    n_clusters = int(num_clusters_entry.get())
-                    if n_clusters<1: raise ValueError
-                except ValueError:
-                    messagebox.showwarning("Invalid input","Enter a valid number of clusters.")
-                    return
 
-            # Kill the window
-            popup.destroy()
-            # Graph everything.
-            plot_clusters_gui(
-                selected_wells=selected_wells,
-                features_selected=features_selected,
-                signals_selected=signals_selected,
-                include_promoter=include_promoter_var.get(),
-                include_ahl=include_ahl_var.get(),
-                clustering_mode="kmeans" if n_clusters else "auto",
-                n_clusters=n_clusters if n_clusters else 4,
-                show_legend=show_legend
-            )
-
-        # Plot button to begin plotting via plot_clusters
-        tk.Button(popup, text="Plot", command=plot_clusters).pack(pady=10)
-
+        # Direct execution of data pipeline mapping vectors into the matplotlib cluster graph frame
+        plot_clusters_gui(
+            selected_wells=selected_wells,
+            features_selected=features_selected,
+            signals_selected=signals_selected,
+            include_promoter=include_promoter_var.get(),
+            include_ahl=include_ahl_var.get(),
+            clustering_mode="kmeans" if n_clusters else "auto",
+            n_clusters=n_clusters if n_clusters else 4,
+            show_legend=show_legend_var.get()
+        )
+    else:
+        # Prompt user to navigate out of the base 'Well Selection' view to evaluate plots
+        messagebox.showinfo("Select an Options Tab", "Please select either the 'Standard Graph' or 'Cluster Options' tab to configure your output layout.")
     # --- Step 4: Standard plotting function (NEW) ---
     def plot_standard(selected_wells, show_legend=True):
         """
@@ -909,9 +1015,6 @@ def select_and_plot_wells():
             legend_ax.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
             legend_ax.set_title("Legend")
             legend_fig.show()
-
-    graph_type_popup(selected_wells)
-
 
 # This is now part of the main window rather than a defined function. If we could somehow reorganize this to not be as out of the way, that would be useful.
 # plot_selected_button acts as a way for a user to call select_and_plot_wells from gui.
