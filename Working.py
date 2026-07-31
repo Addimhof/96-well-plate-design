@@ -101,15 +101,24 @@ icon = tk.PhotoImage(file='Ecoli.png') # Filepath for Window icon. Shows up in t
 window.iconphoto(True, icon) # Set the window icon to display.
 window.config(background="white") # Background window color. Maybe tone this down from straight #ffffff.
 
+# CHANGED: Give the main root window permission to grow rows and columns dynamically
+window.rowconfigure(0, weight=1)
+window.columnconfigure(0, weight=1)
+
 # Top-level notebook — two main tabs
 main_notebook = ttk.Notebook(window)
-main_notebook.pack(fill="both", expand=True, padx=6, pady=6)
+# CHANGED: Use grid configuration on parent layouts instead of pack to pass structural weights safely
+main_notebook.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
 
 plate_tab = ttk.Frame(main_notebook)
 main_notebook.add(plate_tab, text="  🧫  96 Well Plate  ")
 
 analysis_tab = ttk.Frame(main_notebook)
 main_notebook.add(analysis_tab, text="  📊  Analysis  ")
+
+# CHANGED: Force the analysis tab container layout to grow horizontally and vertically
+analysis_tab.rowconfigure(0, weight=1)
+analysis_tab.columnconfigure(0, weight=1)
 
 # As a note, well_name is not actually any variable modified outside of a function. It's another way of referring to well_history[well].
 # TODO: Pick well_name or well as the variable to reference individual wells.
@@ -137,7 +146,7 @@ def open_data_entry(well_name):
         tk.Label(popup, text=label_text + ":", anchor="w").pack(fill="x", padx=14)
         entry = tk.Entry(popup, width=28)
         entry.insert(0, well_data.get(well_name, {}).get(key, ""))
-        if key in ("promoter", "ahl") and round_number > 1:
+        if key in ("promoter", "ahl") and round_number > 1 and well_name in well_data:
             entry.config(state="disabled")
         entry.pack(padx=14, pady=(0, 6))
         fields[key] = entry
@@ -399,10 +408,15 @@ tk.Button(ctrl_frame, text="🔁  Start New Round", command=start_round,
 # ─────────────────────────────────────────────
 
 analysis_inner = ttk.Notebook(analysis_tab)
-analysis_inner.pack(fill="both", expand=True, padx=6, pady=6)
+# CHANGED: Use grid with sticky options on the sub-tab panel so it handles full-screen resizing forces
+analysis_inner.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
 
 well_select_tab = ttk.Frame(analysis_inner)
 analysis_inner.add(well_select_tab, text="  Well Selection  ")
+
+# CHANGED: Give well_select_tab explicit layout scaling parameters so its contents fill up screen space
+well_select_tab.rowconfigure(1, weight=1)
+well_select_tab.columnconfigure(0, weight=1)
 
 standard_options_tab = ttk.Frame(analysis_inner)
 analysis_inner.add(standard_options_tab, text="  Standard Graph  ")
@@ -412,16 +426,16 @@ analysis_inner.add(cluster_options_tab, text="  Cluster Options  ")
 
 # CHANGED: Created the variables immediately before building the UI widgets to prevent scoping NameErrors
 # Instantiating the state variables directly inline before the sub-tab configuration layout items
-std_show_od = tk.BooleanVar(value=True)          # Local indicator for rendering standard OD series lines
-std_show_rfu = tk.BooleanVar(value=True)         # Local indicator for rendering standard RFU series lines
 std_group_by_condition = tk.BooleanVar(value=False) # Local indicator for averaging well groups by metadata
+std_show_legend_var = tk.BooleanVar(value=True) # Local indicator for popping up a legend window from the Standard Graph tab, independent of the Cluster Options tab
+std_show_groups_var = tk.BooleanVar(value=False) # Local indicator for popping up a window listing which wells landed in which promoter+AHL group
 
 # CHANGED: Added interactive configuration elements directly inside the "Standard Graph" tab
 # Set up interactive buttons and layout directly inside the standard graph options tab
 tk.Label(standard_options_tab, text="Standard Graph Settings", font=("Courier", 12, "bold")).pack(pady=(8, 4))
-tk.Checkbutton(standard_options_tab, text="Show OD Data", variable=std_show_od).pack(anchor="w", padx=20, pady=2) # Toggle line visibility for Optical Density
-tk.Checkbutton(standard_options_tab, text="Show RFU Data", variable=std_show_rfu).pack(anchor="w", padx=20, pady=2) # Toggle line visibility for Relative Fluorescence Units
 tk.Checkbutton(standard_options_tab, text="Group by Condition (Mean ± SD)", variable=std_group_by_condition).pack(anchor="w", padx=20, pady=2) # Combine identical experimental environments
+tk.Checkbutton(standard_options_tab, text="Separate Window Legend", variable=std_show_legend_var).pack(anchor="w", padx=20, pady=2) # Toggle popup legend window for the standard graph
+tk.Checkbutton(standard_options_tab, text="Show Group Membership (Group by Condition only)", variable=std_show_groups_var).pack(anchor="w", padx=20, pady=2) # Toggle popup showing which wells landed in which promoter+AHL group
 
 # CHANGED: Declared the shared clustering configurations and placed elements directly inside the "Cluster Options" tab
 # Set up interactive variables and container frames inside the cluster options tab
@@ -458,27 +472,33 @@ num_clusters_entry.pack(anchor="w", padx=30, pady=(0, 4))
 
 # ── Well Selection sub-tab ──────────────────
 
+# CHANGED: Switched title label configuration to grid to avoid blending layout managers
 tk.Label(well_select_tab, text="Select Wells to Plot",
-         font=("Courier", 12, "bold")).pack(pady=(8, 4))
+         font=("Courier", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=(8, 4), sticky="w")
 
 ws_canvas = tk.Canvas(well_select_tab, height=340)
 ws_scrollbar = tk.Scrollbar(well_select_tab, orient="vertical", command=ws_canvas.yview)
 ws_frame = tk.Frame(ws_canvas)
-ws_frame.bind("<Configure>", lambda e: ws_canvas.configure(scrollregion=ws_canvas.bbox("all")))
-ws_canvas.create_window((0, 0), window=ws_frame, anchor="nw")
-ws_canvas.configure(yscrollcommand=ws_scrollbar.set)
-ws_canvas.pack(side="left", fill="both", expand=True, padx=(6, 0))
-ws_scrollbar.pack(side="right", fill="y")
 
+# CHANGED: Use grid configuration to pack the canvas and scrollbar dynamically inside well_select_tab
+ws_canvas.grid(row=1, column=0, sticky="nsew", padx=(6, 0))
+ws_scrollbar.grid(row=1, column=1, sticky="ns")
+
+ws_frame.bind("<Configure>", lambda e: ws_canvas.configure(scrollregion=ws_canvas.bbox("all")))
+
+# CHANGED: Capture the window configuration mapping element id to programmatically stretch it on resize
+canvas_window = ws_canvas.create_window((0, 0), window=ws_frame, anchor="nw")
+
+# CHANGED: Explicitly force the checkbox layout grid frame to match full canvas sizing during full-screen switches
+def _configure_canvas_width(event):
+    ws_canvas.itemconfig(canvas_window, width=event.width)
+ws_canvas.bind("<Configure>", _configure_canvas_width)
+
+ws_canvas.configure(yscrollcommand=ws_scrollbar.set)
 well_vars = {}
 
 # "Select All" checkbox
 select_all_var = tk.BooleanVar(value=False)
-
-std_show_od = tk.BooleanVar(value=True)
-std_show_rfu = tk.BooleanVar(value=True)
-std_group_by_condition = tk.BooleanVar(value=False)
-
 
 def plot_well_history():
     """
@@ -599,27 +619,27 @@ def refresh_well_selector():
     # Individual well checkboxes
     tk.Label(ws_frame, text="─" * 60).grid(row=5, column=0, columnspan=12, pady=4)
     well_vars.clear()
-    # CHANGED: Placed the global variables directly above the checkbox loop so they compile first
-    # Initialize Boolean flags for the standard graph rendering configurations globally to prevent compilation errors
-    global std_show_od, std_show_rfu, std_group_by_condition
-    std_show_od = tk.BooleanVar(value=True)          # Global indicator for rendering standard OD series lines
-    std_show_rfu = tk.BooleanVar(value=True)         # Global indicator for rendering standard RFU series lines
-    std_group_by_condition = tk.BooleanVar(value=False) # Global indicator for averaging well groups by metadata
+
     for r_i, r in enumerate(row_labels):
         for c in range(1, columns + 1):
             well = f"{r}{c}"
             history = well_history.get(well)
-            # Check specificall if od and rfu are non-zero.
             if history and (any(v != 0 for v in history["od"]) or any(v != 0 for v in history["rfu"])):
-                # If the current well does have that data, then add it as a button to the grid, labelled with
-                # "A1,B2,etc. (Promoter | rfu)"
                 var = tk.BooleanVar()
                 well_vars[well] = var
                 label_text = f"{well} ({history['promoter']} | {history['ahl']})"
+                # CHANGED: Added sticky="nsew" so cells grow dynamically when scaling the grid window
                 tk.Checkbutton(ws_frame, text=label_text, variable=var,
                                font=("Courier", 8)
-                               ).grid(row=6 + r_i, column=c - 1, padx=2, pady=1, sticky="w")
+                               ).grid(row=6 + r_i, column=c - 1, padx=2, pady=1, sticky="nsew")
 
+# CHANGED: Added layout grid configuration loops to handle proportional sizing horizontally and vertically
+    # Force the grid columns to distribute horizontal window expansion evenly
+    for c_idx in range(columns):
+        ws_frame.grid_columnconfigure(c_idx, weight=1)
+    # Force the grid rows containing checkboxes to distribute vertical window expansion evenly
+    for r_idx in range(len(row_labels)):
+        ws_frame.grid_rowconfigure(6 + r_idx, weight=1)
 
 refresh_well_selector()
 
@@ -630,6 +650,37 @@ def _embed_figure(parent, fig):
     canvas_plot = FigureCanvasTkAgg(fig, master=parent)
     canvas_plot.draw()
     canvas_plot.get_tk_widget().pack(fill="both", expand=True)
+
+
+def show_group_membership(groups):
+    """
+    Desc: Opens a popup window listing exactly which wells were bucketed into
+    each promoter+AHL group, so grouping can be sanity-checked against the
+    plate data (e.g. spotting accidental string mismatches like "10nM" vs "10 nM").
+
+    Pre: groups must be a dict mapping (promoter, ahl) tuples to lists of well names.
+
+    Post: Displays a read-only, scrollable Toplevel window with the breakdown.
+    """
+    membership_win = tk.Toplevel(window)
+    membership_win.title("Group Membership")
+    membership_win.geometry("480x420")
+
+    text_frame = tk.Frame(membership_win)
+    text_frame.pack(fill="both", expand=True, padx=8, pady=8)
+
+    scrollbar = tk.Scrollbar(text_frame)
+    scrollbar.pack(side="right", fill="y")
+
+    text_box = tk.Text(text_frame, wrap="word", font=("Courier", 9), yscrollcommand=scrollbar.set)
+    text_box.pack(side="left", fill="both", expand=True)
+    scrollbar.config(command=text_box.yview)
+
+    for (promoter, ahl), wells_in_group in groups.items():
+        text_box.insert("end", f"Promoter: {promoter}   AHL: {ahl}   (n={len(wells_in_group)})\n")
+        text_box.insert("end", f"    Wells: {', '.join(sorted(wells_in_group))}\n\n")
+
+    text_box.config(state="disabled")
 
 
 def select_and_plot_wells():
@@ -659,10 +710,10 @@ def select_and_plot_wells():
         Post: show() calls are made to display the data with a GUI.
         """
         # FIXED: Added explicit global markers here so the local scope safely resolves the Tkinter control flags
-        global std_show_od, std_show_rfu, std_group_by_condition
+        global std_group_by_condition
 
-        show_od = std_show_od.get()
-        show_rfu = std_show_rfu.get()
+        show_od = True
+        show_rfu = True
         group_by_condition = std_group_by_condition.get()
 
         max_rounds = max(len(well_history[w]["od"]) for w in selected_wells)
@@ -694,6 +745,9 @@ def select_and_plot_wells():
                 key = (h["promoter"], h["ahl"])
                 groups.setdefault(key, []).append(well)
 
+            if std_show_groups_var.get():
+                show_group_membership(groups)
+
             for i, ((promoter, ahl), wells_in_group) in enumerate(groups.items()):
                 lbl = f"{promoter} | AHL={ahl} (n={len(wells_in_group)})"
                 color = colors[i % len(colors)]
@@ -707,12 +761,8 @@ def select_and_plot_wells():
                     ]
                     mean_od = np.nanmean(padded_od, axis=0)
                     std_od  = np.nanstd(padded_od, axis=0)
-                    ax1.plot(rounds, mean_od, marker="o", linestyle="-",
-                             label=f"{lbl} OD", color=color)
-                    ax1.fill_between(rounds,
-                                     mean_od - std_od,
-                                     mean_od + std_od,
-                                     alpha=0.15, color=color)
+                    ax1.errorbar(rounds, mean_od, yerr=std_od, marker="o", linestyle="-",
+                                 label=f"{lbl} OD", color=color, capsize=4)
 
                 if show_rfu:
                     padded_rfu = [
@@ -723,12 +773,8 @@ def select_and_plot_wells():
                     ]
                     mean_rfu = np.nanmean(padded_rfu, axis=0)
                     std_rfu  = np.nanstd(padded_rfu, axis=0)
-                    ax2.plot(rounds, mean_rfu, marker="x", linestyle="--",
-                             label=f"{lbl} RFU", color=color)
-                    ax2.fill_between(rounds,
-                                     mean_rfu - std_rfu,
-                                     mean_rfu + std_rfu,
-                                     alpha=0.10, color=color)
+                    ax2.errorbar(rounds, mean_rfu, yerr=std_rfu, marker="x", linestyle="--",
+                                 label=f"{lbl} RFU", color=color, capsize=4)
 
             ax1.set_title("Grouped by Promoter + AHL — Mean ± SD")
 
@@ -751,13 +797,7 @@ def select_and_plot_wells():
         ax1.set_ylabel("OD")
         ax2.set_ylabel("RFU")
 
-        # Combined legend
-        all_lines  = ax1.get_lines() + ax2.get_lines()
-        all_labels = [l.get_label() for l in all_lines]
-        fig_std.legend(all_lines, all_labels, loc="lower center",
-                       ncol=max(1, len(all_labels) // 6),
-                       fontsize=7, bbox_to_anchor=(0.5, -0.02))
-        fig_std.tight_layout(rect=[0, 0.08, 1, 1])
+        fig_std.tight_layout()
 
         _embed_figure(std_tab, fig_std)
 
@@ -767,17 +807,33 @@ def select_and_plot_wells():
             notebook.add(od_tab, text="  OD — All Wells  ")
 
             fig_od, ax_od = plt.subplots(figsize=(9, 5))
-            for i, well in enumerate(selected_wells):
-                history = well_history[well]
-                r_vals = list(range(1, len(history["od"]) + 1))
-                ax_od.plot(r_vals, history["od"], marker="o",
-                           label=f"{well} ({history['promoter']})",
-                           color=colors[i % len(colors)])
+
+            if group_by_condition:
+                for i, ((promoter, ahl), wells_in_group) in enumerate(groups.items()):
+                    lbl = f"{promoter} | AHL={ahl} (n={len(wells_in_group)})"
+                    color = colors[i % len(colors)]
+                    padded_od = [
+                        np.pad(well_history[w]["od"],
+                               (0, max_rounds - len(well_history[w]["od"])),
+                               constant_values=np.nan)
+                        for w in wells_in_group
+                    ]
+                    mean_od = np.nanmean(padded_od, axis=0)
+                    std_od  = np.nanstd(padded_od, axis=0)
+                    ax_od.errorbar(rounds, mean_od, yerr=std_od, marker="o", linestyle="-",
+                                   label=lbl, color=color, capsize=4)
+                ax_od.set_title("OD — Grouped by Promoter + AHL — Mean ± SD")
+            else:
+                for i, well in enumerate(selected_wells):
+                    history = well_history[well]
+                    r_vals = list(range(1, len(history["od"]) + 1))
+                    ax_od.plot(r_vals, history["od"], marker="o",
+                               label=f"{well} ({history['promoter']})",
+                               color=colors[i % len(colors)])
+                ax_od.set_title("OD — All Selected Wells")
+
             ax_od.set_xlabel("Round")
             ax_od.set_ylabel("OD")
-            ax_od.set_title("OD — All Selected Wells")
-            ax_od.legend(fontsize=7, ncol=max(1, len(selected_wells) // 10),
-                         bbox_to_anchor=(1, 1), loc="upper left")
             fig_od.tight_layout()
             _embed_figure(od_tab, fig_od)
 
@@ -787,19 +843,49 @@ def select_and_plot_wells():
             notebook.add(rfu_tab, text="  RFU — All Wells  ")
 
             fig_rfu, ax_rfu = plt.subplots(figsize=(9, 5))
-            for i, well in enumerate(selected_wells):
-                history = well_history[well]
-                r_vals = list(range(1, len(history["rfu"]) + 1))
-                ax_rfu.plot(r_vals, history["rfu"], marker="x", linestyle="--",
-                            label=f"{well} ({history['promoter']})",
-                            color=colors[i % len(colors)])
+
+            if group_by_condition:
+                for i, ((promoter, ahl), wells_in_group) in enumerate(groups.items()):
+                    lbl = f"{promoter} | AHL={ahl} (n={len(wells_in_group)})"
+                    color = colors[i % len(colors)]
+                    padded_rfu = [
+                        np.pad(well_history[w]["rfu"],
+                               (0, max_rounds - len(well_history[w]["rfu"])),
+                               constant_values=np.nan)
+                        for w in wells_in_group
+                    ]
+                    mean_rfu = np.nanmean(padded_rfu, axis=0)
+                    std_rfu  = np.nanstd(padded_rfu, axis=0)
+                    ax_rfu.errorbar(rounds, mean_rfu, yerr=std_rfu, marker="x", linestyle="--",
+                                    label=lbl, color=color, capsize=4)
+                ax_rfu.set_title("RFU — Grouped by Promoter + AHL — Mean ± SD")
+            else:
+                for i, well in enumerate(selected_wells):
+                    history = well_history[well]
+                    r_vals = list(range(1, len(history["rfu"]) + 1))
+                    ax_rfu.plot(r_vals, history["rfu"], marker="x", linestyle="--",
+                                label=f"{well} ({history['promoter']})",
+                                color=colors[i % len(colors)])
+                ax_rfu.set_title("RFU — All Selected Wells")
+
             ax_rfu.set_xlabel("Round")
             ax_rfu.set_ylabel("RFU")
-            ax_rfu.set_title("RFU — All Selected Wells")
-            ax_rfu.legend(fontsize=7, ncol=max(1, len(selected_wells) // 10),
-                          bbox_to_anchor=(1, 1), loc="upper left")
             fig_rfu.tight_layout()
             _embed_figure(rfu_tab, fig_rfu)
+
+        # ── Separate legend window ─────────────
+        if show_legend:
+            handles1, labels1 = ax1.get_legend_handles_labels()
+            handles2, labels2 = ax2.get_legend_handles_labels()
+            lines = handles1 + handles2
+            labels = labels1 + labels2
+            legend_fig = plt.figure("Legend Window", figsize=(6, max(4, len(labels) * 0.35)))
+            legend_ax = legend_fig.add_subplot(111)
+            legend_ax.axis("off")
+            ncols = max(1, len(labels) // 15)
+            legend_ax.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
+            legend_ax.set_title("Legend")
+            legend_fig.show()
 
 # CHANGED: Moved the tab checking logic directly under the function definition so it targets plot_standard sequentially
     # Check which sub-tab is currently active under the Analysis section to determine whether to run standard plotting or cluster operations
@@ -807,7 +893,7 @@ def select_and_plot_wells():
 
     if active_tab_index == 1:
         # User has the 'Standard Graph' sub-tab active, run standard generation routine directly
-        plot_standard(selected_wells, show_legend=show_legend_var.get())
+        plot_standard(selected_wells, show_legend=std_show_legend_var.get())
     elif active_tab_index == 2:
         # User has the 'Cluster Options' sub-tab active, prepare feature dicts and run cluster validation routine directly
         
@@ -847,174 +933,6 @@ def select_and_plot_wells():
     else:
         # Prompt user to navigate out of the base 'Well Selection' view to evaluate plots
         messagebox.showinfo("Select an Options Tab", "Please select either the 'Standard Graph' or 'Cluster Options' tab to configure your output layout.")
-    # --- Step 4: Standard plotting function (NEW) ---
-    def plot_standard(selected_wells, show_legend=True):
-        """
-        Desc: This function is called by graph_type_popup when the user calls for a standard graph, represented by tk StringVar value "all" when a graphing
-        method is chosen by the program. selected_wells is iterated through for to construct lines for each included well via matplotlib's functions 
-        and the resulting graph, alongside a legend for each of the lines, is displayed in a GUI to the user. 
-
-        Pre: A dictionary called selected_wells must be passed to this function. It is the dataset we do plt operations on.
-
-        Post: show() calls are made to display the data with a GUI.
-        """
-        show_od = std_show_od.get()
-        show_rfu = std_show_rfu.get()
-        group_by_condition = std_group_by_condition.get()
-
-        max_rounds = max(len(well_history[w]["od"]) for w in selected_wells)
-        rounds = list(range(1, max_rounds + 1))
-        colors = plt.cm.tab10.colors
-
-        graph_win = tk.Toplevel(window)
-        graph_win.title("Graph Results")
-        graph_win.geometry("1050x720")
-        graph_win.lift()
-        graph_win.attributes("-topmost", True)
-        graph_win.after(800, lambda: graph_win.attributes("-topmost", False))
-
-        notebook = ttk.Notebook(graph_win)
-        notebook.pack(fill="both", expand=True)
-
-        # ── Tab: Standard Graph ─────────────────
-        std_tab = ttk.Frame(notebook)
-        notebook.add(std_tab, text="  Standard Graph  ")
-
-        fig_std, ax1 = plt.subplots(figsize=(9, 5))
-        ax2 = ax1.twinx()
-
-        if group_by_condition:
-            # Group wells that share the same (promoter, AHL) pair and average them
-            groups = {}
-            for well in selected_wells:
-                h = well_history[well]
-                key = (h["promoter"], h["ahl"])
-                groups.setdefault(key, []).append(well)
-
-            for i, ((promoter, ahl), wells_in_group) in enumerate(groups.items()):
-                lbl = f"{promoter} | AHL={ahl} (n={len(wells_in_group)})"
-                color = colors[i % len(colors)]
-
-                if show_od:
-                    padded_od = [
-                        np.pad(well_history[w]["od"],
-                               (0, max_rounds - len(well_history[w]["od"])),
-                               constant_values=np.nan)
-                        for w in wells_in_group
-                    ]
-                    mean_od = np.nanmean(padded_od, axis=0)
-                    std_od  = np.nanstd(padded_od, axis=0)
-                    ax1.plot(rounds, mean_od, marker="o", linestyle="-",
-                             label=f"{lbl} OD", color=color)
-                    ax1.fill_between(rounds,
-                                     mean_od - std_od,
-                                     mean_od + std_od,
-                                     alpha=0.15, color=color)
-
-                if show_rfu:
-                    padded_rfu = [
-                        np.pad(well_history[w]["rfu"],
-                               (0, max_rounds - len(well_history[w]["rfu"])),
-                               constant_values=np.nan)
-                        for w in wells_in_group
-                    ]
-                    mean_rfu = np.nanmean(padded_rfu, axis=0)
-                    std_rfu  = np.nanstd(padded_rfu, axis=0)
-                    ax2.plot(rounds, mean_rfu, marker="x", linestyle="--",
-                             label=f"{lbl} RFU", color=color)
-                    ax2.fill_between(rounds,
-                                     mean_rfu - std_rfu,
-                                     mean_rfu + std_rfu,
-                                     alpha=0.10, color=color)
-
-            ax1.set_title("Grouped by Promoter + AHL — Mean ± SD")
-
-        else:
-            # Individual well lines
-            for i, well in enumerate(selected_wells):
-                history = well_history[well]
-                r_vals = list(range(1, len(history["od"]) + 1))
-                lbl = f"{history['promoter']} ({history['ahl']}) — {well}"
-                if show_od:
-                    ax1.plot(r_vals, history["od"], marker="o", linestyle="-",
-                             label=f"{lbl} OD", color=colors[i % len(colors)])
-                if show_rfu:
-                    ax2.plot(r_vals, history["rfu"], marker="x", linestyle="--",
-                             label=f"{lbl} RFU", color=colors[i % len(colors)])
-
-            ax1.set_title("Selected Wells — OD & RFU over Rounds")
-
-        ax1.set_xlabel("Round")
-        ax1.set_ylabel("OD")
-        ax2.set_ylabel("RFU")
-
-        # Combined legend
-        all_lines  = ax1.get_lines() + ax2.get_lines()
-        all_labels = [l.get_label() for l in all_lines]
-        fig_std.legend(all_lines, all_labels, loc="lower center",
-                       ncol=max(1, len(all_labels) // 6),
-                       fontsize=7, bbox_to_anchor=(0.5, -0.02))
-        fig_std.tight_layout(rect=[0, 0.08, 1, 1])
-
-        _embed_figure(std_tab, fig_std)
-
-        # ── Tab: OD over Rounds (per well) ─────
-        if show_od:
-            od_tab = ttk.Frame(notebook)
-            notebook.add(od_tab, text="  OD — All Wells  ")
-
-            fig_od, ax_od = plt.subplots(figsize=(9, 5))
-            for i, well in enumerate(selected_wells):
-                history = well_history[well]
-                r_vals = list(range(1, len(history["od"]) + 1))
-                ax_od.plot(r_vals, history["od"], marker="o",
-                           label=f"{well} ({history['promoter']})",
-                           color=colors[i % len(colors)])
-            ax_od.set_xlabel("Round")
-            ax_od.set_ylabel("OD")
-            ax_od.set_title("OD — All Selected Wells")
-            ax_od.legend(fontsize=7, ncol=max(1, len(selected_wells) // 10),
-                         bbox_to_anchor=(1, 1), loc="upper left")
-            fig_od.tight_layout()
-            _embed_figure(od_tab, fig_od)
-
-        # ── Tab: RFU over Rounds (per well) ────
-        if show_rfu:
-            rfu_tab = ttk.Frame(notebook)
-            notebook.add(rfu_tab, text="  RFU — All Wells  ")
-
-            fig_rfu, ax_rfu = plt.subplots(figsize=(9, 5))
-            for i, well in enumerate(selected_wells):
-                history = well_history[well]
-                r_vals = list(range(1, len(history["rfu"]) + 1))
-                ax_rfu.plot(r_vals, history["rfu"], marker="x", linestyle="--",
-                            label=f"{well} ({history['promoter']})",
-                            color=colors[i % len(colors)])
-            ax_rfu.set_xlabel("Round")
-            ax_rfu.set_ylabel("RFU")
-            ax_rfu.set_title("RFU — All Selected Wells")
-            ax_rfu.legend(fontsize=7, ncol=max(1, len(selected_wells) // 10),
-                          bbox_to_anchor=(1, 1), loc="upper left")
-            fig_rfu.tight_layout()
-            _embed_figure(rfu_tab, fig_rfu)
-
-        # --- Show legend ---
-        if show_legend:
-            # lines is a list of the ax1 and ax2 lines drawn for later legend handling.
-            lines = ax1.get_lines() + ax2.get_lines()
-            # labels is a list of labels accessed from the list of lines created, also for legend handling.
-            labels = [l.get_label() for l in lines]
-            # legend_fig is the constructed window for figures.
-            legend_fig = plt.figure("Legend Window", figsize=(6, max(4,len(labels)*0.35)))
-            # legend_ax is created to allow us to render things.
-            legend_ax = legend_fig.add_subplot(111)
-            legend_ax.axis("off")
-            # ncols is scaled to the number of lines present. 
-            ncols = max(1,len(labels)//15)
-            # legend_ax is actually made into a proper legend here. It pulls the lines list, the labels list, centers everything based on ncols, and adds a border.
-            legend_ax.legend(lines, labels, loc="center", ncol=ncols, frameon=True)
-            legend_ax.set_title("Legend")
-            legend_fig.show()
 
 # This is now part of the main window rather than a defined function. If we could somehow reorganize this to not be as out of the way, that would be useful.
 # plot_selected_button acts as a way for a user to call select_and_plot_wells from gui.
@@ -1022,7 +940,10 @@ plot_selected_button = tk.Button(
     analysis_tab,
     text="Plot Selected Wells",
     command=select_and_plot_wells)
-plot_selected_button.pack(pady=10)
+
+# CHANGED: Switched from .pack() to .grid() to align geometry managers and prevent the TclError crash.
+# This positions the button directly below the notebook in row 1, and lets it span horizontally.
+plot_selected_button.grid(row=1, column=0, pady=10, sticky="ew", padx=10)
 
 def plot_clusters_gui(selected_wells, features_selected, signals_selected,
                       include_promoter=False, include_ahl=False,
